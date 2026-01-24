@@ -1,0 +1,72 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function getUserDoc() {
+      return isSignedIn()
+        ? firestore.get(/databases/$(database)/documents/users/$(request.auth.uid))
+        : null;
+    }
+
+    function hasUserPermission(requiredPerm) {
+      return isSignedIn()
+        && getUserDoc() != null
+        && getUserDoc().data.permissions != null
+        && requiredPerm in getUserDoc().data.permissions;
+    }
+
+    function isAdmin() {
+      return hasUserPermission('SUPERADMIN') || hasUserPermission('ADMIN');
+    }
+
+    function isValidImageUpload(MB) {
+      return request.resource != null
+        && request.resource.size < MB * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+    }
+
+    // ====== PUBLIC ======
+    match /public/{path=**} {
+      allow read: if true;
+      allow write: if isAdmin() && isValidImageUpload(100);
+      allow delete: if isAdmin();
+    }
+
+    // ====== AUTH/COMMON  ======
+    match /auth/common/{path=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn()
+                   && !path.matches('user/.*')
+                   && isValidImageUpload(10);
+      allow delete: if isSignedIn() && !path.matches('user/.*');
+    }
+
+    // ====== AVATAR PUBBLICI ======
+    match /auth/common/user/{userId}/avatar/{file=**} {
+      allow read: if true; // pubblico
+      allow write: if isSignedIn()
+                   && request.auth.uid == userId
+                   && isValidImageUpload(20);
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ====== SPAZIO PRIVATO PER UTENTE ======
+    match /auth/{userId}/{path=**} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isSignedIn()
+                   && request.auth.uid == userId
+                   && isValidImageUpload(20);
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Catch-all
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

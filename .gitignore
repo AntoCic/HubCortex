@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+.firebase-emulators/old-state/*
+.firebase-emulators/state/*
+
+script/firebase-adminsdk.json*

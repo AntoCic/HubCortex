@@ -1,0 +1,42 @@
+@use './variables' as *;
+
+.noselect {
+    -webkit-touch-callout: none;
+    /* iOS Safari */
+    -webkit-user-select: none;
+    /* Safari */
+    /* Konqueror HTML */
+    -moz-user-select: none;
+    /* Old versions of Firefox */
+    -ms-user-select: none;
+    /* Internet Explorer/Edge */
+    user-select: none;
+    /* Non-prefixed version, currently
+    supported by Chrome, Edge, Opera and Firefox */
+}
+
+.input-google-icon {
+    position: relative;
+
+    .icon {
+        position: absolute;
+        top: 50%;
+        left: 5px;
+        transform: translate(0, -50%);
+        cursor: default;
+        font-size: 1.25rem
+    }
+
+    input {
+        padding-left: 28px;
+    }
+}
+
+.logo-shadows {
+    will-change: filter;
+    transition: filter 300ms;
+    &:hover {
+        filter: drop-shadow(0 0 2em rgba(255, 255, 255, 0.3));
+    }
+}
+

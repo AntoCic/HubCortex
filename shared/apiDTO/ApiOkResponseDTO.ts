@@ -1,0 +1,1 @@
+export interface ApiOkResponseDTO { ok: true; message: string; }

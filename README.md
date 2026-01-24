@@ -1,5 +1,13 @@
-# Vue 3 + TypeScript + Vite
+# per iniziare
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+- set firabase project (nome, piano blaze, firestore, store, provider auth (google, email))
+- creare la cartella con il nome del progetto e aprendo la cartella su vscode aprire il terminale e lanciare npm create vite@latest . vue
+- inizializzare la cartella su github con primo push dell progetto di base
+- lanciare => firebase init (importante no eslint e no public ma dist) (firestore, function, hosting, storage)
+- fix firebase.json
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+---
+
+# first Change(parole da cercare è cambiare)
+
+- TermsView.vue
