@@ -14,11 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: npm ci
-      - run: npm run predeploy
-      - run: npm run builddeploy
+      - run: npm run build
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_HUBCORTEX_33389 }}
           projectId: hubcortex-33389
-      - run: npm run postdeploy

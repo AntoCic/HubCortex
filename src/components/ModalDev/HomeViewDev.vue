@@ -16,6 +16,7 @@ const pkg = rawPkg as { name?: string; version?: string }
     <div class="row">
       <div class="col-12 mb-3">
         <h1>Home Dev </h1>
+        <p>test</p>
       </div>
       <div class="col-12 mb-4">
         <div
