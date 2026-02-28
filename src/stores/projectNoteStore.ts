@@ -1,11 +1,11 @@
 import { reactive } from 'vue';
 import { FirestoreStore } from 'cic-kit';
 import { where } from 'firebase/firestore';
-import { ProjectTask, type ProjectTaskData } from '../models/ProjectTask';
+import { ProjectNote, type ProjectNoteData } from '../models/ProjectNote';
 
-class ProjectTaskStore extends FirestoreStore<ProjectTask, ProjectTaskData> {
+class ProjectNoteStore extends FirestoreStore<ProjectNote, ProjectNoteData> {
   constructor() {
-    super(ProjectTask);
+    super(ProjectNote);
   }
 
   async getForProject(projectId: string) {
@@ -30,4 +30,4 @@ class ProjectTaskStore extends FirestoreStore<ProjectTask, ProjectTaskData> {
   }
 }
 
-export const projectTaskStore = reactive(new ProjectTaskStore());
+export const projectNoteStore = reactive(new ProjectNoteStore());

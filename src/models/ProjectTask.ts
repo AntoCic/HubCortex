@@ -1,16 +1,20 @@
-import { FirestoreModel, type Timestampble } from 'cic-kit';
+import { FirestoreModel, toColorTagArray, type ColorTag, type Timestampble } from 'cic-kit';
+import { TaskStatus, isTaskStatus, type TaskStatusType } from '@shared/enums/TaskStatus';
 
-export const TASK_STATUSES = ['todo', 'doing', 'blocked', 'done'] as const;
-export type TaskStatusType = (typeof TASK_STATUSES)[number];
+function normalizeTags(value: unknown) {
+  const normalized = toColorTagArray(value);
+  if (!normalized.length) return undefined;
+  return normalized.slice(0, 30);
+}
 
 export interface ProjectTaskData extends Partial<Timestampble> {
   id: string;
   projectId: string;
   title: string;
   description?: string;
+  tag?: ColorTag[];
   status: TaskStatusType;
   branchName?: string;
-  errorMessage?: string;
   updateBy: string;
 }
 
@@ -20,9 +24,9 @@ export class ProjectTask extends FirestoreModel<ProjectTaskData> {
   projectId: string;
   title: string;
   description?: string;
+  tag?: ColorTag[];
   status: TaskStatusType;
   branchName?: string;
-  errorMessage?: string;
   updateBy: string;
 
   constructor(data: ProjectTaskData) {
@@ -30,9 +34,9 @@ export class ProjectTask extends FirestoreModel<ProjectTaskData> {
     this.projectId = data.projectId;
     this.title = data.title;
     this.description = data.description;
-    this.status = TASK_STATUSES.includes(data.status) ? data.status : 'todo';
+    this.tag = normalizeTags(data.tag);
+    this.status = isTaskStatus(data.status) ? data.status : TaskStatus.TODO;
     this.branchName = data.branchName;
-    this.errorMessage = data.errorMessage;
     this.updateBy = data.updateBy;
   }
 
@@ -42,9 +46,9 @@ export class ProjectTask extends FirestoreModel<ProjectTaskData> {
       projectId: this.projectId,
       title: this.title,
       description: this.description,
+      tag: normalizeTags(this.tag),
       status: this.status,
       branchName: this.branchName,
-      errorMessage: this.errorMessage,
       updateBy: this.updateBy,
       ...this.timestampbleProps(),
     };

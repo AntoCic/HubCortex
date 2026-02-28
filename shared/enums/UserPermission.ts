@@ -3,6 +3,7 @@ export const UserPermission = {
   ADMIN: 'ADMIN',
   SUPERADMIN: 'SUPERADMIN',
   BETA_FEATURES: 'BETA_FEATURES',
+  MANAGE_PROJECT: 'MANAGE_PROJECT',
 } as const;
 
 export type UserPermission = typeof UserPermission[keyof typeof UserPermission];

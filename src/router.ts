@@ -12,9 +12,15 @@ import { createWebHistory, type RouteRecordRaw } from 'vue-router';
 import AppConfigView from './views/admin/AppConfigView.vue';
 import AgentPromptsView from './views/admin/AgentPromptsView.vue';
 import PublicUsersView from './views/admin/PublicUsersView.vue';
-import HomeAuthView from './views/home/HomeAuthView.vue';
+import GenericChatView from './views/ai/GenericChatView.vue';
+import ImageChatView from './views/ai/ImageChatView.vue';
 import HomeView from './views/home/HomeView.vue';
-import ProjectsView from './views/projects/ProjectsView.vue';
+import ProjectBoardView from './views/projects/ProjectBoardView.vue';
+import ProjectCmdUtilsView from './views/projects/ProjectCmdUtilsView.vue';
+import ProjectDashboardView from './views/projects/ProjectDashboardView.vue';
+import ProjectFormView from './views/projects/ProjectFormView.vue';
+import ProjectMessagesView from './views/projects/ProjectMessagesView.vue';
+import ProjectNotesView from './views/projects/ProjectNotesView.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -31,8 +37,26 @@ const routes: RouteRecordRaw[] = [
   { path: '/register', name: 'register', component: RegisterView, meta: { onlyNotAuth: true } },
   { path: '/reset-password', name: 'reset-password', component: ResetPasswordView, meta: { onlyNotAuth: true } },
 
-  { path: '/home-auth', name: 'home-auth', component: HomeAuthView, meta: { onlyAuth: true } },
-  { path: '/projects', name: 'projects', component: ProjectsView, meta: { onlyAuth: true } },
+  { path: '/projects/dashboard', name: 'project-dashboard', component: ProjectDashboardView, meta: { onlyAuth: true } },
+  { path: '/projects/new', name: 'project-new', component: ProjectFormView, meta: { onlyAuth: true } },
+  { path: '/projects/:projectId/edit', name: 'project-edit', component: ProjectFormView, meta: { onlyAuth: true } },
+  { path: '/projects/:projectId/board', name: 'project-board', component: ProjectBoardView, meta: { onlyAuth: true } },
+  { path: '/projects/:projectId/messages', name: 'project-messages', component: ProjectMessagesView, meta: { onlyAuth: true } },
+  { path: '/projects/:projectId/notes', name: 'project-notes', component: ProjectNotesView, meta: { onlyAuth: true } },
+  {
+    path: '/projects/:projectId/cmd-utils',
+    name: 'project-cmd-utils',
+    component: ProjectCmdUtilsView,
+    meta: { onlyAuth: true },
+  },
+  { path: '/projects', name: 'projects', redirect: { name: 'project-dashboard' }, meta: { onlyAuth: true } },
+  { path: '/ai/chat', name: 'ai-chat', component: GenericChatView, meta: { onlyAuth: true, permission: 'AI' } },
+  {
+    path: '/ai/image-chat',
+    name: 'ai-image-chat',
+    component: ImageChatView,
+    meta: { onlyAuth: true, permission: 'AI' },
+  },
   { path: '/user', name: 'user', component: UserView, meta: { onlyAuth: true } },
 
   {
@@ -79,7 +103,7 @@ router.beforeEach((to) => {
   }
 
   if (to.meta.onlyNotAuth && _Auth?.isLoggedIn) {
-    return { name: 'home-auth' };
+    return { name: 'home' };
   }
 
   if (to.meta.onlyAuth && !_Auth?.isLoggedIn) {

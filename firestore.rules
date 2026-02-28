@@ -56,7 +56,7 @@ service cloud.firestore {
       }
     }
 
-    match /users_public/{userId} {
+    match /public_users/{userId} {
       allow read: if isSignedIn();
       allow write: if isOwner(userId) || isAdmin();
     }
@@ -79,8 +79,40 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
-    match /projectStatuses/{id} {
+    match /projectTags/{id} {
       allow read, write: if isSignedIn();
+    }
+
+    match /projectNotes/{id} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /projectCmdUtils/{id} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /projectMessages/{id} {
+      allow read: if isSignedIn();
+      allow write: if hasPermission('MANAGE_PROJECT');
+    }
+
+    match /projectNotificationPreferences/{id} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() && (
+        request.resource.data.userId == request.auth.uid || isAdmin()
+      );
+
+      allow update: if isSignedIn() && (
+        (
+          resource.data.userId == request.auth.uid &&
+          request.resource.data.userId == resource.data.userId
+        ) || isAdmin()
+      );
+
+      allow delete: if isSignedIn() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
     }
 
     match /settings/{id} {

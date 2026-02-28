@@ -7,21 +7,24 @@ type OffcanvasTabConfig = OffcanvasTab & {
 
 const toolbarOffcanvasTabConfigs: OffcanvasTabConfig[] = [
   {
-    name: 'Home',
-    icon: 'home',
-    to: { name: 'home' },
-  },
-  {
-    name: 'Dashboard',
-    icon: 'dashboard',
-    to: { name: 'home-auth' },
-    onlyAuth: true,
-  },
-  {
     name: 'Progetti',
     icon: 'workspaces',
-    to: { name: 'projects' },
+    to: { name: 'project-dashboard' },
     onlyAuth: true,
+  },
+  {
+    name: 'Chat AI',
+    icon: 'chat',
+    to: { name: 'ai-chat' },
+    onlyAuth: true,
+    permission: 'AI',
+  },
+  {
+    name: 'Image AI',
+    icon: 'image',
+    to: { name: 'ai-image-chat' },
+    onlyAuth: true,
+    permission: 'AI',
   },
   {
     name: 'Prompt AI',
@@ -43,12 +46,6 @@ const toolbarOffcanvasTabConfigs: OffcanvasTabConfig[] = [
     to: { name: 'public-users' },
     onlyAuth: true,
     permission: 'ADMIN',
-  },
-  {
-    name: 'Profilo',
-    icon: 'account_circle',
-    to: { name: 'user' },
-    onlyAuth: true,
   },
 ];
 

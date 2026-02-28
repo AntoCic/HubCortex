@@ -54,7 +54,11 @@ export function cmdStart(stateNameInput) {
       "EMULATORS"
     );
 
-    const vite = spawnCmd("npm", ["run", "dev"], "VITE");
+    const vite = spawnCmd(
+      "npm",
+      ["run", "dev", "--", "--host", "0.0.0.0", "--port", "5173", "--strictPort"],
+      "VITE"
+    );
 
     emu.on("exit", (code) => {
       try {

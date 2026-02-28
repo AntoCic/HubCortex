@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { _Auth, toast, useChangeHeader } from 'cic-kit';
 import { computed, onMounted } from 'vue';
+import AppCard from '../../components/ui/AppCard.vue';
 import {
   AGENT_PROMPT_DEFAULTS,
   AGENT_PROMPT_IDS,
@@ -10,7 +11,7 @@ import {
 } from '../../models/AgentPrompt';
 import { agentPromptStore } from '../../stores/agentPromptStore';
 
-useChangeHeader('Prompt AI', { name: 'home-auth' });
+useChangeHeader('Prompt AI', { name: 'home' });
 
 const promptItems = computed(() =>
   AGENT_PROMPT_IDS.map((id) => agentPromptStore.items[id]).filter(Boolean) as AgentPrompt[],
@@ -59,14 +60,14 @@ async function savePrompt(prompt: AgentPrompt) {
 </script>
 
 <template>
-  <div class="container page-wrap">
-    <div class="card card-hub p-3 mb-3">
+  <div class="container pb-t overflow-auto h-100">
+    <AppCard class="p-3 mb-3">
       <h1 class="h5 mb-0">Configurazione Prompt AI</h1>
-    </div>
+    </AppCard>
 
     <div class="row g-3">
       <div class="col-12" v-for="prompt in promptItems" :key="prompt.id">
-        <div class="card card-hub p-3">
+        <AppCard class="p-3">
           <h2 class="h6">{{ getPromptLabel(prompt.id) }}</h2>
 
           <div class="row g-2 mb-2">
@@ -88,9 +89,9 @@ async function savePrompt(prompt: AgentPrompt) {
           <textarea v-model="prompt.prompt" class="form-control mb-3" rows="8" />
 
           <div>
-            <button class="btn btn-hub-primary" @click="savePrompt(prompt)">Salva</button>
+            <button class="btn btn-primary" @click="savePrompt(prompt)">Salva</button>
           </div>
-        </div>
+        </AppCard>
       </div>
     </div>
   </div>

@@ -1,47 +1,31 @@
 <script setup lang="ts">
 import { _Auth, toast, useChangeHeader } from 'cic-kit';
-import { onMounted, reactive } from 'vue';
+import { computed, onMounted, reactive } from 'vue';
+import AppCard from '../../components/ui/AppCard.vue';
 import {
   APP_CONFIG_DEFAULTS,
-  APP_CONFIG_ID,
   type AppConfig,
-  type AppConfigData,
 } from '../../models/AppConfig';
 import { appConfigStore } from '../../stores/appConfigStore';
 
-useChangeHeader('App Config', { name: 'home-auth' });
+useChangeHeader('App Config', { name: 'home' });
 
 const form = reactive({
   appName: APP_CONFIG_DEFAULTS.appName,
   supportEmail: APP_CONFIG_DEFAULTS.supportEmail,
   githubOrg: APP_CONFIG_DEFAULTS.githubOrg,
-  defaultProjectStatus: APP_CONFIG_DEFAULTS.defaultProjectStatus,
 });
 
-let appConfigDoc: AppConfig | undefined;
+const appConfigDoc = computed(() => appConfigStore.getConfig())
 
 onMounted(async () => {
-  await appConfigStore.get();
-  appConfigDoc = appConfigStore.items[APP_CONFIG_ID];
-
-  if (!appConfigDoc) {
-    appConfigDoc = await appConfigStore.add({
-      id: APP_CONFIG_ID,
-      appName: APP_CONFIG_DEFAULTS.appName,
-      supportEmail: APP_CONFIG_DEFAULTS.supportEmail,
-      githubOrg: APP_CONFIG_DEFAULTS.githubOrg,
-      defaultProjectStatus: APP_CONFIG_DEFAULTS.defaultProjectStatus,
-    } as AppConfigData);
-  }
-
-  loadForm(appConfigDoc);
+  if (appConfigDoc.value) loadForm(appConfigDoc.value);
 });
 
 function loadForm(config: AppConfig) {
   form.appName = config.appName;
   form.supportEmail = config.supportEmail;
   form.githubOrg = config.githubOrg;
-  form.defaultProjectStatus = config.defaultProjectStatus;
 }
 
 function getUpdater() {
@@ -49,13 +33,12 @@ function getUpdater() {
 }
 
 async function save() {
-  if (!appConfigDoc) return;
+  if (!appConfigDoc.value) return;
 
-  await appConfigDoc.update({
+  await appConfigDoc.value.update({
     appName: form.appName.trim() || APP_CONFIG_DEFAULTS.appName,
     supportEmail: form.supportEmail.trim() || APP_CONFIG_DEFAULTS.supportEmail,
     githubOrg: form.githubOrg.trim() || APP_CONFIG_DEFAULTS.githubOrg,
-    defaultProjectStatus: form.defaultProjectStatus,
   });
 
   toast.success(`App config aggiornata da ${getUpdater()}.`);
@@ -63,8 +46,8 @@ async function save() {
 </script>
 
 <template>
-  <div class="container page-wrap">
-    <div class="card card-hub p-3">
+  <div class="container pb-t overflow-auto h-100">
+    <AppCard class="p-3">
       <h1 class="h5 mb-3">Configurazione applicazione</h1>
 
       <div class="row g-2 mb-2">
@@ -83,18 +66,9 @@ async function save() {
           <label class="form-label small">GitHub Org</label>
           <input v-model="form.githubOrg" class="form-control" />
         </div>
-        <div class="col-12 col-md-6">
-          <label class="form-label small">Default Project Status</label>
-          <select v-model="form.defaultProjectStatus" class="form-select">
-            <option value="planned">planned</option>
-            <option value="active">active</option>
-            <option value="blocked">blocked</option>
-            <option value="done">done</option>
-          </select>
-        </div>
       </div>
 
-      <button class="btn btn-hub-primary" @click="save">Salva</button>
-    </div>
+      <button class="btn btn-primary" @click="save">Salva</button>
+    </AppCard>
   </div>
 </template>
