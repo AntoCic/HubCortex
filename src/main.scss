@@ -1,0 +1,72 @@
+@use "bootstrap/scss/bootstrap";
+@use "cic-kit/style";
+
+:root {
+  --hub-red: #f05454;
+  --hub-blue: #30475e;
+  --hub-blue-soft: #3b566f;
+  --hub-bg: #f3f6fa;
+}
+
+body {
+  background: radial-gradient(circle at top right, rgba(240, 84, 84, 0.14), transparent 38%),
+    radial-gradient(circle at bottom left, rgba(48, 71, 94, 0.16), transparent 34%), var(--hub-bg);
+  color: #22303d;
+}
+
+.app-main {
+  min-height: calc(100dvh - var(--header-h));
+  padding-bottom: 88px;
+}
+
+.page-wrap {
+  min-height: 100%;
+  padding-top: 1rem;
+  padding-bottom: 1.5rem;
+}
+
+.card-hub {
+  border: 0;
+  border-radius: 1rem;
+  box-shadow: 0 12px 28px rgba(26, 39, 52, 0.1);
+}
+
+.btn-hub-primary {
+  --bs-btn-color: #fff;
+  --bs-btn-bg: var(--hub-blue);
+  --bs-btn-border-color: var(--hub-blue);
+  --bs-btn-hover-bg: #253a4d;
+  --bs-btn-hover-border-color: #253a4d;
+}
+
+.btn-hub-accent {
+  --bs-btn-color: #fff;
+  --bs-btn-bg: var(--hub-red);
+  --bs-btn-border-color: var(--hub-red);
+  --bs-btn-hover-bg: #d94444;
+  --bs-btn-hover-border-color: #d94444;
+}
+
+.badge-project-planned {
+  background-color: #b9c4d1;
+}
+
+.badge-project-active {
+  background-color: var(--hub-blue);
+}
+
+.badge-project-blocked {
+  background-color: #ff9f43;
+}
+
+.badge-project-done {
+  background-color: #2e8b57;
+}
+
+.text-brand-blue {
+  color: var(--hub-blue);
+}
+
+.text-brand-red {
+  color: var(--hub-red);
+}

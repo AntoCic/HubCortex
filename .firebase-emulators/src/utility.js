@@ -1,22 +1,23 @@
-// .firebase-emulators/src/utility.js
 import fs from "fs";
 import path from "path";
-import { execSync } from "child_process";
 import readline from "readline";
 
 export const ROOT = process.cwd();
 
 export const BASE_DIR = path.join(ROOT, ".firebase-emulators");
 export const STATE_DIR = path.join(BASE_DIR, "state");
+export const STATES_DIR = path.join(BASE_DIR, "states");
 export const OLD_STATE_DIR = path.join(BASE_DIR, "old-state");
+export const DEFAULT_STATE_NAME = "default";
 
-// ---------------- utils ----------------
+const STATE_NAME_RE = /^[A-Za-z0-9._-]+$/;
+
 export function ensureDir(p) {
   if (!fs.existsSync(p)) fs.mkdirSync(p, { recursive: true });
 }
 
 export function sleep(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export function tsFolder() {
@@ -38,23 +39,22 @@ export function copyDir(src, dest) {
   return true;
 }
 
-/**
- * Sposta una directory. Su Windows può fallire con EPERM se ci sono handle aperti.
- * Quindi: prova rename, altrimenti copia + delete.
- */
+// On Windows rename may fail with EPERM if handles are still open.
 export function moveDirSafe(src, dest) {
   try {
     fs.renameSync(src, dest);
     return;
-  } catch (e) {
-    // fallback robusto
+  } catch {
     ensureDir(dest);
     fs.cpSync(src, dest, { recursive: true });
     fs.rmSync(src, { recursive: true, force: true });
   }
 }
 
-export function askConfirm(question = "Sei sicuro di voler continuare? [S/n] ") {
+export function askConfirm(
+  question = "Are you sure? [Y/n] ",
+  defaultYes = true
+) {
   return new Promise((resolve) => {
     const rl = readline.createInterface({
       input: process.stdin,
@@ -65,24 +65,28 @@ export function askConfirm(question = "Sei sicuro di voler continuare? [S/n] ") 
       rl.close();
       const a = (answer || "").trim().toLowerCase();
 
-      // default = sì
-      if (a === "") return resolve(true);
-
-      // sì
-      if (["s", "si", "sì", "y", "yes"].includes(a)) return resolve(true);
-
-      // no
+      if (a === "") return resolve(defaultYes);
+      if (["s", "si", "y", "yes"].includes(a)) return resolve(true);
       if (["n", "no"].includes(a)) return resolve(false);
 
-      // qualsiasi altra cosa -> default sì
-      resolve(true);
+      resolve(defaultYes);
     });
   });
 }
 
-export function run(cmd) {
-  console.log(`\n$ ${cmd}`);
-  execSync(cmd, { stdio: "inherit" });
+export function askInput(question, defaultValue = "") {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    rl.question(question, (answer) => {
+      rl.close();
+      const value = (answer || "").trim();
+      resolve(value || defaultValue);
+    });
+  });
 }
 
 export function listFirebaseExportFolders(dir) {
@@ -96,6 +100,7 @@ export function listFirebaseExportFolders(dir) {
 export function newestDir(dirs) {
   let best = null;
   let bestMtime = -1;
+
   for (const d of dirs) {
     try {
       const st = fs.statSync(d);
@@ -104,27 +109,73 @@ export function newestDir(dirs) {
         bestMtime = m;
         best = d;
       }
-    } catch {}
+    } catch {
+      // ignore unreadable folders
+    }
   }
+
   return best;
 }
 
-// Swap sicuro: non distrugge state finché non ha next pronto
-export function swapStateWith(nextStatePath, stamp) {
-  const nextStateDir = path.join(BASE_DIR, `.next_state_${stamp}`);
-  const oldStateSwap = path.join(BASE_DIR, `.state_prev_${stamp}`);
+export function normalizeStateName(value) {
+  const raw = (value || "").trim();
+  if (!raw) return DEFAULT_STATE_NAME;
+  if (raw === DEFAULT_STATE_NAME) return DEFAULT_STATE_NAME;
 
-  // porta next dentro BASE_DIR (evita rename cross-path + riduce EPERM)
-  removeDir(nextStateDir);
-  moveDirSafe(nextStatePath, nextStateDir);
+  if (!STATE_NAME_RE.test(raw)) {
+    throw new Error(
+      `Invalid state name "${raw}". Allowed: letters, numbers, '.', '_' and '-'.`
+    );
+  }
 
-  // sposta state attuale in state_prev
-  removeDir(oldStateSwap);
-  if (fs.existsSync(STATE_DIR)) moveDirSafe(STATE_DIR, oldStateSwap);
+  return raw;
+}
 
-  // promuovi next -> state
-  moveDirSafe(nextStateDir, STATE_DIR);
+export function getStateDir(stateName) {
+  const normalized = normalizeStateName(stateName);
+  if (normalized === DEFAULT_STATE_NAME) return STATE_DIR;
+  return path.join(STATES_DIR, normalized);
+}
 
-  // cleanup
-  removeDir(oldStateSwap);
+export function listStates() {
+  const names = [DEFAULT_STATE_NAME];
+
+  if (!fs.existsSync(STATES_DIR)) {
+    return names;
+  }
+
+  const namedStates = fs
+    .readdirSync(STATES_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .filter((name) => STATE_NAME_RE.test(name))
+    .sort((a, b) => a.localeCompare(b));
+
+  return [...names, ...namedStates];
+}
+
+export function stateExists(stateName) {
+  return fs.existsSync(getStateDir(stateName));
+}
+
+export function relativeToRoot(absolutePath) {
+  return path.relative(ROOT, absolutePath) || ".";
+}
+
+// Safe swap: keep old target until next state is ready.
+export function swapDirWith(nextPath, targetPath, stamp, label = "state") {
+  const safeLabel = label.replace(/[^A-Za-z0-9._-]/g, "_");
+  const nextSwap = path.join(BASE_DIR, `.next_${safeLabel}_${stamp}`);
+  const prevSwap = path.join(BASE_DIR, `.prev_${safeLabel}_${stamp}`);
+
+  removeDir(nextSwap);
+  moveDirSafe(nextPath, nextSwap);
+
+  removeDir(prevSwap);
+  if (fs.existsSync(targetPath)) moveDirSafe(targetPath, prevSwap);
+
+  ensureDir(path.dirname(targetPath));
+  moveDirSafe(nextSwap, targetPath);
+
+  removeDir(prevSwap);
 }

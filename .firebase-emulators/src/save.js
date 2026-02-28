@@ -1,123 +1,184 @@
-// .firebase-emulators/src/save.js
+import fs from "fs";
 import path from "path";
+import { execSync } from "child_process";
 import {
   ROOT,
   BASE_DIR,
-  STATE_DIR,
+  STATES_DIR,
   OLD_STATE_DIR,
+  DEFAULT_STATE_NAME,
   ensureDir,
   askConfirm,
+  askInput,
   tsFolder,
   copyDir,
   removeDir,
-  run,
   listFirebaseExportFolders,
   newestDir,
   sleep,
-  swapStateWith,
+  swapDirWith,
+  getStateDir,
+  normalizeStateName,
+  relativeToRoot,
 } from "./utility.js";
 
-export async function cmdSave() {
-  const confirmed = await askConfirm(
-    "⚠️  Questa operazione SALVERÀ lo stato attuale come nuovo state.\n" +
-    "Il state corrente verrà spostato in old-state.\n" +
-    "Vuoi continuare? [S/n] "
+function fsExists(p) {
+  return fs.existsSync(p);
+}
+
+function toSafeLabel(value) {
+  return value.replace(/[^A-Za-z0-9._-]/g, "_");
+}
+
+function normalizeExecOutput(value) {
+  if (!value) return "";
+  if (Buffer.isBuffer(value)) return value.toString();
+  return String(value);
+}
+
+function runExport(tmpDir) {
+  const cmd = `firebase emulators:export "${tmpDir}" --force`;
+  console.log(`\n$ ${cmd}`);
+
+  try {
+    const stdout = execSync(cmd, {
+      stdio: ["ignore", "pipe", "pipe"],
+      encoding: "utf8",
+    });
+
+    if (stdout) process.stdout.write(stdout);
+    return { ok: true, noRunningEmulators: false };
+  } catch (error) {
+    const stdout = normalizeExecOutput(error.stdout);
+    const stderr = normalizeExecOutput(error.stderr);
+    const message = normalizeExecOutput(error.message);
+
+    if (stdout) process.stdout.write(stdout);
+    if (stderr) process.stderr.write(stderr);
+
+    const combined = `${stdout}\n${stderr}\n${message}`;
+    return {
+      ok: false,
+      noRunningEmulators: /Did not find any running emulators/i.test(combined),
+    };
+  }
+}
+
+async function resolveStateName(stateNameInput) {
+  if (stateNameInput) {
+    return normalizeStateName(stateNameInput);
+  }
+
+  const wantsNamedState = await askConfirm(
+    "Vuoi salvare in uno stato con nome personalizzato? [y/N] ",
+    false
   );
 
+  if (!wantsNamedState) {
+    return DEFAULT_STATE_NAME;
+  }
+
+  const typedName = await askInput(
+    `Nome stato (invio = ${DEFAULT_STATE_NAME}): `,
+    DEFAULT_STATE_NAME
+  );
+
+  return normalizeStateName(typedName);
+}
+
+export async function cmdSave(stateNameInput) {
+  const stateName = await resolveStateName(stateNameInput);
+  const targetDir = getStateDir(stateName);
+  const hadPreviousState = fsExists(targetDir);
+
+  let confirmMessage =
+    `Salvo lo snapshot corrente degli emulatori nello stato "${stateName}".\n` +
+    `Lo stato precedente verra salvato in old-state/${stateName}/<timestamp>.\n` +
+    "Continuo? [Y/n] ";
+  let confirmDefault = true;
+
+  if (stateName === DEFAULT_STATE_NAME && hadPreviousState) {
+    confirmMessage =
+      `Stai per sovrascrivere lo stato "${DEFAULT_STATE_NAME}".\n` +
+      `Backup previsto in old-state/${stateName}/<timestamp>.\n` +
+      "Sei sicuro? [y/N] ";
+    confirmDefault = false;
+  }
+
+  const confirmed = await askConfirm(confirmMessage, confirmDefault);
+
   if (!confirmed) {
-    console.log("❌ Operazione annullata.");
-    process.exit(0);
+    console.log("Operazione annullata.");
+    return;
   }
 
   ensureDir(BASE_DIR);
+  ensureDir(STATES_DIR);
   ensureDir(OLD_STATE_DIR);
+  ensureDir(path.dirname(targetDir));
 
   const stamp = tsFolder();
-  const backupDir = path.join(OLD_STATE_DIR, stamp);
+  const backupDir = path.join(OLD_STATE_DIR, stateName, stamp);
 
-  // 1) Backup state corrente -> old-state/<timestamp>/
-  if (fsExists(STATE_DIR)) {
-    console.log(`📦 Backup state corrente -> ${backupDir}`);
-    copyDir(STATE_DIR, backupDir);
+  if (hadPreviousState) {
+    console.log(`Backup stato corrente -> ${relativeToRoot(backupDir)}`);
+    copyDir(targetDir, backupDir);
   } else {
-    console.log("ℹ️ Nessun state esistente da backuppare (creo state nuovo).");
+    console.log(`Nessuno stato "${stateName}" esistente. Ne verra creato uno nuovo.`);
   }
 
-  // 2) Export in tmp
-  const tmpDir = path.join(BASE_DIR, `.tmp_export_${stamp}`);
+  const safeLabel = toSafeLabel(stateName);
+  const tmpDir = path.join(BASE_DIR, `.tmp_export_${safeLabel}_${stamp}`);
   removeDir(tmpDir);
   ensureDir(tmpDir);
 
-  // snapshot export folders esistenti (per fallback)
   const beforeExports = new Set([
     ...listFirebaseExportFolders(ROOT),
     ...listFirebaseExportFolders(BASE_DIR),
   ]);
 
-  // 3) Prova export "normale" nella tmp dir
-  try {
-    console.log(`🚚 Export stato attuale emulatori -> ${tmpDir}`);
-    run(`firebase emulators:export "${tmpDir}" --force`);
+  let exportedDir = tmpDir;
 
-    // Se arriviamo qui, l'export è ok: swap state in modo sicuro
-    console.log(`♻️ Aggiorno state -> ${STATE_DIR}`);
-    swapStateWith(tmpDir, stamp);
+  console.log(`Export stato emulatori -> ${relativeToRoot(tmpDir)}`);
+  const exportResult = runExport(tmpDir);
 
-    console.log("\n✅ State aggiornato con successo!");
-    console.log(`➡️ State attivo: ${STATE_DIR}`);
-    console.log(`➡️ Backup state precedente: ${backupDir}`);
-    return;
-  } catch (e) {
+  if (!exportResult.ok) {
+    if (exportResult.noRunningEmulators) {
+      throw new Error(
+        "Nessun emulatore in esecuzione trovato. Avvia prima gli emulatori (es: npm run emu:start) e poi riesegui emu:save. Se gli emulatori girano in Docker, esegui il comando nello stesso container."
+      );
+    }
+
     console.warn(
-      "\n⚠️ Export diretto fallito. Provo fallback su cartella firebase-export-*..."
+      "Export diretto fallito. Provo fallback su cartella firebase-export-* ..."
     );
+
+    removeDir(tmpDir);
+    await sleep(700);
+
+    const afterExports = [
+      ...listFirebaseExportFolders(ROOT),
+      ...listFirebaseExportFolders(BASE_DIR),
+    ].filter((p) => !beforeExports.has(p));
+
+    const fallback = newestDir(afterExports);
+
+    if (!fallback) {
+      throw new Error(
+        "Export fallito e nessuna cartella firebase-export-* trovata (fallback)."
+      );
+    }
+
+    exportedDir = fallback;
+    console.log(`Uso cartella fallback: ${relativeToRoot(exportedDir)}`);
   }
 
-  // cleanup tmp che potrebbe essere incompleta
-  removeDir(tmpDir);
+  console.log(`Aggiorno stato "${stateName}" -> ${relativeToRoot(targetDir)}`);
+  swapDirWith(exportedDir, targetDir, stamp, stateName);
 
-  // 4) Fallback: alcune versioni di firebase-tools creano firebase-export-* altrove
-  await sleep(700); // evita EPERM/handle ancora aperti su Windows
-
-  const afterExports = [
-    ...listFirebaseExportFolders(ROOT),
-    ...listFirebaseExportFolders(BASE_DIR),
-  ].filter((p) => !beforeExports.has(p));
-
-  const fallback = newestDir(afterExports);
-
-  if (!fallback) {
-    console.error(
-      "\n❌ Export fallito e nessuna cartella firebase-export-* trovata per fallback."
-    );
-    console.error(
-      "👉 Guarda i log degli emulatori (terminal/UI) per capire perché export fallisce."
-    );
-    process.exit(1);
+  console.log(`Stato "${stateName}" salvato correttamente.`);
+  console.log(`Path attivo: ${relativeToRoot(targetDir)}`);
+  if (hadPreviousState) {
+    console.log(`Path backup: ${relativeToRoot(backupDir)}`);
   }
-
-  console.log(`✅ Trovata cartella export fallback: ${fallback}`);
-
-  try {
-    console.log(`♻️ Aggiorno state -> ${STATE_DIR}`);
-    // swap state in modo sicuro usando la cartella fallback
-    swapStateWith(fallback, stamp);
-
-    console.log("\n✅ State aggiornato con successo (fallback)!");
-    console.log(`➡️ State attivo: ${STATE_DIR}`);
-    console.log(`➡️ Backup state precedente: ${backupDir}`);
-  } catch (err) {
-    console.error("\n❌ Errore nel sostituire state con la cartella fallback.");
-    console.error(err);
-    console.error(
-      "\n👉 Nota: state NON dovrebbe essere perso, perché lo swap è sicuro."
-    );
-    process.exit(1);
-  }
-}
-
-// micro helper interno (evita import fs qui)
-import fs from "fs";
-function fsExists(p) {
-  return fs.existsSync(p);
 }

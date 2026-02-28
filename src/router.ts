@@ -1,111 +1,96 @@
-// router.ts
-import { createRouter, createWebHistory } from 'vue-router'
-import type { RouteLocationNormalizedGeneric, RouteRecordRaw } from 'vue-router'
-import HomeView from './views/home/HomeAuthView.vue'
-import UserView from './views/user/UserView.vue'
-import LoginView from './views/user/LoginView.vue'
-import { currentUserStore } from './stores/currentUserStore'
-import { watch } from 'vue'
-import ErrorView from './views/ErrorView.vue'
-import RegisterView from './views/user/RegisterView.vue'
-import ResetPasswordView from './views/user/ResetPasswordView.vue'
-import TermsView from './views/policies/TermsView.vue'
-import UserFormPersonalInfo from './views/user/usersettings/UserFormPersonalInfo.vue'
-import SettingsView from './views/settings/SettingsView.vue'
-import { store } from './stores/store'
-import { setToolbarTab } from './components/toolbar/useChangeToolbar'
-import type { UserPermission } from '@shared/enums/UserPermission'
+import {
+  ErrorView as DefaultErrorView,
+  LoginView,
+  RegisterView,
+  ResetPasswordView,
+  UserView,
+  _Auth,
+  initRouter,
+  setToolbarTab,
+} from 'cic-kit';
+import { createWebHistory, type RouteRecordRaw } from 'vue-router';
+import AppConfigView from './views/admin/AppConfigView.vue';
+import AgentPromptsView from './views/admin/AgentPromptsView.vue';
+import PublicUsersView from './views/admin/PublicUsersView.vue';
+import HomeAuthView from './views/home/HomeAuthView.vue';
+import HomeView from './views/home/HomeView.vue';
+import ProjectsView from './views/projects/ProjectsView.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
-    onlyAuth?: boolean
-    onlyNotAuth?: boolean
-    permission?: UserPermission
+    onlyAuth?: boolean;
+    onlyNotAuth?: boolean;
+    permission?: string;
   }
 }
 
 const routes: RouteRecordRaw[] = [
-  // ===================================================================================================
-  // public
   { path: '/', name: 'home', component: HomeView },
-  { path: '/terms', name: 'terms', component: TermsView },
 
-
-  // ===================================================================================================
-  // onlyNotAuth
   { path: '/login', name: 'login', component: LoginView, meta: { onlyNotAuth: true } },
   { path: '/register', name: 'register', component: RegisterView, meta: { onlyNotAuth: true } },
   { path: '/reset-password', name: 'reset-password', component: ResetPasswordView, meta: { onlyNotAuth: true } },
 
-
-  // ===================================================================================================
-  // onlyAuth
+  { path: '/home-auth', name: 'home-auth', component: HomeAuthView, meta: { onlyAuth: true } },
+  { path: '/projects', name: 'projects', component: ProjectsView, meta: { onlyAuth: true } },
   { path: '/user', name: 'user', component: UserView, meta: { onlyAuth: true } },
-  { path: '/user/info', name: 'user-info', component: UserFormPersonalInfo, meta: { onlyAuth: true } },
-  { path: '/settings', name: 'settings', component: SettingsView, meta: { onlyAuth: true } },
 
+  {
+    path: '/admin/agent-prompts',
+    name: 'agent-prompts',
+    component: AgentPromptsView,
+    meta: { onlyAuth: true, permission: 'AI' },
+  },
+  {
+    path: '/admin/app-config',
+    name: 'app-config',
+    component: AppConfigView,
+    meta: { onlyAuth: true, permission: 'SUPERADMIN' },
+  },
+  {
+    path: '/admin/public-users',
+    name: 'public-users',
+    component: PublicUsersView,
+    meta: { onlyAuth: true, permission: 'ADMIN' },
+  },
 
-  // ===================================================================================================
-  // --- Unauthorized
-  { path: '/unauthorized', name: 'unauthorized', component: ErrorView, props: { kind: 'unauthorized' as const } },
-  // --- 404 catch-all (deve stare in fondo)
-  { path: '/:pathMatch(.*)*', name: 'not-found', component: ErrorView, props: (route) => ({ kind: '404' as const, attemptedPath: route.fullPath }) },
-]
+  {
+    path: '/unauthorized',
+    name: 'unauthorized',
+    component: DefaultErrorView,
+  },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: DefaultErrorView,
+  },
+];
 
-export const router = createRouter({
+export const router = initRouter({
   history: createWebHistory(),
-  routes
-})
-
-function doAccessCheck(to: RouteLocationNormalizedGeneric) {
-  if (to.meta.onlyNotAuth && currentUserStore.isLoggedIn) {
-    return { name: 'user' }
-  }
-  if (to.meta.onlyAuth && !currentUserStore.isLoggedIn) {
-    return { name: 'login', query: { redirect: to.fullPath } }
-  }
-  if (to.meta.permission && !currentUserStore?.user?.hasPermission?.(to.meta.permission)) {
-    return { name: 'unauthorized', query: { from: to.fullPath } }
-  }
-  return false
-}
+  routes,
+});
 
 router.beforeEach((to) => {
-  const name = store.TOOLBAR.getDefaultCurrentTab(to.name)
-  setToolbarTab(name)
-  if (!currentUserStore.isLoginChecked) {
+  setToolbarTab(String(to.name ?? 'home'));
 
-    // aspetta che checkAuth parta
-    currentUserStore.checkAuth()
-    const stop = watch(
-      () => currentUserStore.isLoginChecked,
-      async (checked) => {
-        if (checked) {
-          stop();
-          const routeLocation = doAccessCheck(to);
-          router.push(routeLocation !== false ? routeLocation : to);
-        }
-      }
-    )
-
-    return false
+  if (_Auth?.isOnLoginProcess) {
+    return false;
   }
-  const routeLocation = doAccessCheck(to);
-  if (routeLocation !== false) {
-    router.push(routeLocation);
+
+  if (to.meta.onlyNotAuth && _Auth?.isLoggedIn) {
+    return { name: 'home-auth' };
   }
-  return !routeLocation
-})
 
-// ---- HOOK POST-NAVIGAZIONE (qui lanci una funzione “ad ogni cambio rotta”)
-// router.afterEach((to, from) => {
-//   console.log(to, from);
+  if (to.meta.onlyAuth && !_Auth?.isLoggedIn) {
+    return { name: 'login', query: { redirect: to.fullPath } };
+  }
 
-// Qui metti qualsiasi side-effect che vuoi a ogni cambio pagina
-// es: analytics, reset stati, aggiornare titolo, ecc.
-// runOnEveryRouteChange(to, from)
+  if (to.meta.permission && !_Auth?.user?.hasPermission?.(to.meta.permission)) {
+    return { name: 'unauthorized', query: { from: to.fullPath } };
+  }
 
-// })
+  return true;
+});
 
-export default router
-
+export default router;

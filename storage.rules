@@ -2,69 +2,68 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    
+
     function isSignedIn() {
       return request.auth != null;
     }
 
-    function getUserDoc() {
-      return isSignedIn()
-        ? firestore.get(/databases/$(database)/documents/users/$(request.auth.uid))
-        : null;
+    function userDocPath() {
+      return /databases/(default)/documents/users/$(request.auth.uid);
     }
 
-    function hasUserPermission(requiredPerm) {
-      return isSignedIn()
-        && getUserDoc() != null
-        && getUserDoc().data.permissions != null
-        && requiredPerm in getUserDoc().data.permissions;
+    function hasPermission(requiredPerm) {
+      return isSignedIn() && (
+        (
+          request.auth.token.permissions != null &&
+          request.auth.token.permissions is list &&
+          requiredPerm in request.auth.token.permissions
+        )
+        ||
+        (
+          firestore.exists(userDocPath()) &&
+          firestore.get(userDocPath()).data.permissions is list &&
+          requiredPerm in firestore.get(userDocPath()).data.permissions
+        )
+      );
     }
 
     function isAdmin() {
-      return hasUserPermission('SUPERADMIN') || hasUserPermission('ADMIN');
+      return hasPermission('ADMIN') || hasPermission('SUPERADMIN');
     }
 
-    function isValidImageUpload(MB) {
+    function isValidUpload(maxMb, contentType) {
       return request.resource != null
-        && request.resource.size < MB * 1024 * 1024
-        && request.resource.contentType.matches('image/.*');
+        && request.resource.size < maxMb * 1024 * 1024
+        && (
+          contentType == null ||
+          (request.resource.contentType != null && request.resource.contentType.matches(contentType))
+        );
     }
 
-    // ====== PUBLIC ======
+    match /public/projects/{projectId}/{path=**} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidUpload(25, null);
+      allow delete: if isSignedIn();
+    }
+
     match /public/{path=**} {
       allow read: if true;
-      allow write: if isAdmin() && isValidImageUpload(100);
+      allow write: if isAdmin() && isValidUpload(50, null);
       allow delete: if isAdmin();
     }
 
-    // ====== AUTH/COMMON  ======
-    match /auth/common/{path=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn()
-                   && !path.matches('user/.*')
-                   && isValidImageUpload(10);
-      allow delete: if isSignedIn() && !path.matches('user/.*');
-    }
-
-    // ====== AVATAR PUBBLICI ======
-    match /auth/common/user/{userId}/avatar/{file=**} {
-      allow read: if true; // pubblico
-      allow write: if isSignedIn()
-                   && request.auth.uid == userId
-                   && isValidImageUpload(20);
-      allow delete: if isSignedIn() && request.auth.uid == userId;
-    }
-
-    // ====== SPAZIO PRIVATO PER UTENTE ======
-    match /auth/{userId}/{path=**} {
+    match /user/{userId}/{path=**} {
       allow read: if isSignedIn() && request.auth.uid == userId;
-      allow write: if isSignedIn()
-                   && request.auth.uid == userId
-                   && isValidImageUpload(20);
+      allow write: if isSignedIn() && request.auth.uid == userId && isValidUpload(20, null);
       allow delete: if isSignedIn() && request.auth.uid == userId;
     }
 
-    // Catch-all
+    match /public/user/{userId}/{path=**} {
+      allow read: if true;
+      allow write: if isSignedIn() && request.auth.uid == userId && isValidUpload(20, null);
+      allow delete: if isSignedIn() && request.auth.uid == userId;
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

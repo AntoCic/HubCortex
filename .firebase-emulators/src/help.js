@@ -1,16 +1,26 @@
-// .firebase-emulators/src/help.js
 export function printHelp() {
   console.log(`
-Uso:
-  node ./.firebase-emulators/emu.js [COMANDO]
+Usage:
+  node ./.firebase-emulators/emu.js <COMMAND> [STATE_NAME]
 
-Comandi:
-  help    Mostra questo messaggio
-  start   Avvia gli emulatori importando lo state da:
-          ./.firebase-emulators/state
-  save    Salva lo stato attuale degli emulatori come nuovo state:
-          - backup state corrente in .firebase-emulators/old-state/<timestamp>/
-          - export dallo Hub emulatori
-          - aggiorna .firebase-emulators/state (senza rischiare di perderlo)
+Commands:
+  help                 Show this help message
+  start [state]        Start emulators with selected state
+                       - default state path: ./.firebase-emulators/state
+                       - named state path:   ./.firebase-emulators/states/<state>
+  save [state]         Save current emulator snapshot into selected state
+                       - backup previous data in:
+                         ./.firebase-emulators/old-state/<state>/<timestamp>/
+                       - if [state] is omitted, you can choose a custom name
+                         or keep default
+  list                 List available states
+  delete <state>       Delete one state (default allowed)
+
+Examples:
+  npm run emu:start
+  npm run emu:start -- qa
+  npm run emu:save -- qa
+  npm run emu:list
+  npm run emu:delete -- qa
 `);
 }

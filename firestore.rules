@@ -7,51 +7,80 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function hasUserPermission(requiredPerm) {
-      return isSignedIn() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-        requiredPerm in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permissions;
+    function userDocPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
     }
+
+    function hasPermission(requiredPerm) {
+      return isSignedIn() && (
+        (
+          request.auth.token.permissions != null &&
+          request.auth.token.permissions is list &&
+          requiredPerm in request.auth.token.permissions
+        )
+        ||
+        (
+          exists(userDocPath()) &&
+          get(userDocPath()).data.permissions is list &&
+          requiredPerm in get(userDocPath()).data.permissions
+        )
+      );
+    }
+
     function isAdmin() {
-      return hasUserPermission('SUPERADMIN') || hasUserPermission('ADMIN');
+      return hasPermission('ADMIN') || hasPermission('SUPERADMIN');
     }
 
     function isSuperAdmin() {
-      return hasUserPermission('SUPERADMIN');
+      return hasPermission('SUPERADMIN');
     }
-    
+
     function isOwner(userId) {
-      return (isSignedIn() && request.auth.uid == userId) || isSuperAdmin();
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     match /users/{userId} {
-      // Lettura: solo il proprietario (come prima)
-      allow read: if isOwner(userId);
+      allow read: if isOwner(userId) || isAdmin();
 
-      allow create: if (isOwner(userId) && !('permissions' in request.resource.data))
-                    || isAdmin();
+      allow create: if (isOwner(userId) && !('permissions' in request.resource.data)) || isAdmin();
 
-      allow update: if
-        (
-          isOwner(userId) &&
-          !request.resource.data.diff(resource.data).changedKeys().hasAny(['permissions'])
-        )
-        ||
-        isAdmin();
+      allow update: if (
+        isOwner(userId) &&
+        !request.resource.data.diff(resource.data).changedKeys().hasAny(['permissions'])
+      ) || isAdmin();
 
-      allow delete: if isOwner(userId);
-      
-      match /settings/{id} { allow read, write: if isOwner(userId); }
-    }
+      allow delete: if isOwner(userId) || isSuperAdmin();
 
-    match /appConfig/{id} {
-      allow read: if true;
-      allow write: if isSignedIn() && hasUserPermission('SUPERADMIN');
+      match /settings/{id} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
     }
 
     match /users_public/{userId} {
       allow read: if isSignedIn();
-      allow write: if isOwner(userId);
+      allow write: if isOwner(userId) || isAdmin();
+    }
+
+    match /appConfig/{id} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    match /agentPrompts/{id} {
+      allow read: if isSignedIn();
+      allow write: if hasPermission('AI');
+    }
+
+    match /projects/{id} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /projectTasks/{id} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /projectStatuses/{id} {
+      allow read, write: if isSignedIn();
     }
 
     match /settings/{id} {

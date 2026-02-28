@@ -7,13 +7,16 @@
     "shell": "npm run build && firebase functions:shell",
     "start": "npm run shell",
     "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "logs": "firebase functions:log",
+    "i:l": "npm uninstall cic-kit-firebase-functions && npm i ../../../cic-kit-firebase-functions/cic-kit-firebase-functions-0.0.2.tgz",
+    "i:o": "npm uninstall cic-kit-firebase-functions && npm i cic-kit-firebase-functions"
   },
   "engines": {
     "node": "24"
   },
   "main": "lib/index.js",
   "dependencies": {
+    "cic-kit-firebase-functions": "^0.0.4",
     "firebase-admin": "^13.6.0",
     "firebase-functions": "^7.0.0",
     "graphql": "^16.12.0"

@@ -1,21 +1,22 @@
-// src/stores/appConfigStore.ts
-import { reactive, type Reactive } from 'vue'
-import { FirestoreStore } from '../components/firestore/FirestoreStore'
-import { AppConfig, type AppConfigData } from '../models/AppConfig'
-import pkg from '../../package.json'
-import { toast } from '../components/toast/toastController'
+import { reactive } from 'vue';
+import { FirestoreStore } from 'cic-kit';
+import { APP_CONFIG_ID, AppConfig, mergeAppConfigWithDefaults, type AppConfigData } from '../models/AppConfig';
+
 class AppConfigStore extends FirestoreStore<AppConfig, AppConfigData> {
   constructor() {
-    super(AppConfig)
+    super(AppConfig);
   }
 
-  async getAppConfig() {
-    if (!pkg?.name) {
-      toast.logError({ title: 'Error package.json', message: 'Need fill package.json name' });
-      throw new Error("Need fill package.json name");
+  getConfig() {
+    return this.items?.[APP_CONFIG_ID];
+  }
+
+  getConfigData() {
+    if (typeof window !== 'undefined' && !this.getConfig()) {
+      this.localGet();
     }
-    const item = await this.get()
-    return item?.[pkg.name]
+    return mergeAppConfigWithDefaults(this.getConfig()?.toData());
   }
 }
-export const appConfigStore: Reactive<AppConfigStore> = reactive(new AppConfigStore());
+
+export const appConfigStore = reactive(new AppConfigStore());

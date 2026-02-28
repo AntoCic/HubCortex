@@ -1,7 +1,11 @@
-/* === gestisce l'invio di una notifica push a un utente ====================== */
-export { sendUserPush } from './features/senderPush/sendUserPush';
+import { cicInit } from 'cic-kit-firebase-functions';
+import { genericChatAgent } from './agents/genericChatAgent.js';
+import { imageChatAgent } from './agents/imageChatAgent.js';
+import { REGION } from './config/runtime.js';
 
+const { sendUserPush, syncPublicUser } = cicInit({
+  region: REGION,
+  https: { cors: true },
+});
 
-/* === call utity ============================= */
-// export { proposeMatchScore } from './api/proposeMatchScore';
-
+export { sendUserPush, syncPublicUser, genericChatAgent, imageChatAgent };
