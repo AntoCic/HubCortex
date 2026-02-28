@@ -1,0 +1,55 @@
+name: Cleanup Firebase Hosting preview channels
+on:
+  delete:
+  pull_request:
+    types:
+      - closed
+
+jobs:
+  cleanup_on_branch_delete:
+    if: ${{ github.event_name == 'delete' && github.event.ref_type == 'branch' && github.event.ref != 'main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute channel id from deleted branch name
+        id: channel
+        run: |
+          raw="${{ github.event.ref }}"
+          normalized=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's#[^a-z0-9-]+#-#g; s#^-+##; s#-+$##')
+          if [ -z "$normalized" ]; then
+            normalized="branch"
+          fi
+          hash=$(echo -n "$raw" | sha1sum | cut -c1-8)
+          base=$(echo "$normalized" | cut -c1-20)
+          channel="br-${base}-${hash}"
+          echo "channel_id=$channel" >> "$GITHUB_OUTPUT"
+      - name: Authenticate Firebase CLI with service account
+        run: |
+          printf '%s' '${{ secrets.FIREBASE_SERVICE_ACCOUNT_HUBCORTEX_33389 }}' > "$RUNNER_TEMP/firebase-sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-sa.json" >> "$GITHUB_ENV"
+      - name: Delete preview channel
+        run: |
+          npx firebase-tools hosting:channel:delete "${{ steps.channel.outputs.channel_id }}" --project hubcortex-33389 --force || echo "Preview channel already removed."
+
+  cleanup_on_pr_merge:
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute channel id from merged branch name
+        id: channel
+        run: |
+          raw="${{ github.event.pull_request.head.ref }}"
+          normalized=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's#[^a-z0-9-]+#-#g; s#^-+##; s#-+$##')
+          if [ -z "$normalized" ]; then
+            normalized="branch"
+          fi
+          hash=$(echo -n "$raw" | sha1sum | cut -c1-8)
+          base=$(echo "$normalized" | cut -c1-20)
+          channel="br-${base}-${hash}"
+          echo "channel_id=$channel" >> "$GITHUB_OUTPUT"
+      - name: Authenticate Firebase CLI with service account
+        run: |
+          printf '%s' '${{ secrets.FIREBASE_SERVICE_ACCOUNT_HUBCORTEX_33389 }}' > "$RUNNER_TEMP/firebase-sa.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-sa.json" >> "$GITHUB_ENV"
+      - name: Delete preview channel
+        run: |
+          npx firebase-tools hosting:channel:delete "${{ steps.channel.outputs.channel_id }}" --project hubcortex-33389 --force || echo "Preview channel already removed."

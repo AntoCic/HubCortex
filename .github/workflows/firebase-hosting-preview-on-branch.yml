@@ -1,0 +1,40 @@
+name: Deploy Firebase Hosting preview on branch push
+on:
+  push:
+    branches-ignore:
+      - main
+
+jobs:
+  build_and_deploy_preview:
+    if: ${{ github.event.deleted == false }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: firebase-preview-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compute channel id from branch name
+        id: channel
+        run: |
+          raw="${GITHUB_REF_NAME}"
+          normalized=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's#[^a-z0-9-]+#-#g; s#^-+##; s#-+$##')
+          if [ -z "$normalized" ]; then
+            normalized="branch"
+          fi
+          hash=$(echo -n "$raw" | sha1sum | cut -c1-8)
+          base=$(echo "$normalized" | cut -c1-20)
+          channel="br-${base}-${hash}"
+          echo "channel_id=$channel" >> "$GITHUB_OUTPUT"
+      - run: npm ci && npm run build
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        id: deploy
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_HUBCORTEX_33389 }}
+          projectId: hubcortex-33389
+          channelId: ${{ steps.channel.outputs.channel_id }}
+          expires: 30d
+      - name: Print preview URL
+        run: |
+          echo "Preview URL: ${{ steps.deploy.outputs.details_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Expires: ${{ steps.deploy.outputs.expire_time_formatted }}" >> "$GITHUB_STEP_SUMMARY"
