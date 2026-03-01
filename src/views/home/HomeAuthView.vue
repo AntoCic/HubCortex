@@ -78,7 +78,7 @@ const visibleApps = computed(() =>
       <RouterLink v-for="app in visibleApps" :key="app.id" :to="app.to" class="app-shortcut text-decoration-none">
         <div class="app-tile">
           <div class="app-icon" :class="app.iconClass">
-            <span class="material-symbols-rounded app-icon-symbol">{{ app.icon }}</span>
+            <span class="material-symbols-outlined app-icon-symbol">{{ app.icon }}</span>
           </div>
           <div class="app-title">{{ app.title }}</div>
         </div>
