@@ -1,15 +1,53 @@
 <script setup lang="ts">
-import { _Auth, FieldColorTag, FieldTiptap, toast, useChangeHeader, useStoreWatch, type ColorTag } from 'cic-kit';
+import {
+  _Auth,
+  Btn,
+  FieldColorTag,
+  FieldTiptap,
+  Modal,
+  toast,
+  useChangeHeader,
+  useHeaderExtra,
+  useStoreWatch,
+  type ColorTag,
+} from 'cic-kit';
 import { computed, reactive, ref, watch } from 'vue';
 import { Form } from 'vee-validate';
+import draggable from 'vuedraggable';
 import { useRoute, useRouter } from 'vue-router';
 import { TaskStatus, TASK_STATUSES, type TaskStatusType } from '@shared/enums/TaskStatus';
-import AppCard from '../../components/ui/AppCard.vue';
-import ModalCmp from '../../components/ui/ModalCmp.vue';
-import { callCreateProjectTaskBranch, callDeleteProjectTaskBranch } from '../../call/callProjectBranch';
 import { projectStore } from '../../stores/projectStore';
-import { projectTagStore } from '../../stores/projectTagStore';
 import { projectTaskStore } from '../../stores/projectTaskStore';
+import { tagStore } from '../../stores/tagStore';
+import ProjectBoardHeaderExtra from './ProjectBoardHeaderExtra.vue';
+
+type ColumnLayout = {
+  status: TaskStatusType;
+  hidden: boolean;
+  width: number;
+};
+
+type TaskOrderMap = Record<TaskStatusType, string[]>;
+
+function createDefaultLayout(): ColumnLayout[] {
+  return [
+    { status: TaskStatus.TODO, hidden: false, width: 320 },
+    { status: TaskStatus.DOING, hidden: false, width: 360 },
+    { status: TaskStatus.BLOCKED, hidden: false, width: 320 },
+    { status: TaskStatus.BUG, hidden: false, width: 320 },
+    { status: TaskStatus.DONE, hidden: false, width: 300 },
+  ];
+}
+
+function createEmptyOrderMap(): TaskOrderMap {
+  return {
+    [TaskStatus.TODO]: [],
+    [TaskStatus.DOING]: [],
+    [TaskStatus.BLOCKED]: [],
+    [TaskStatus.BUG]: [],
+    [TaskStatus.DONE]: [],
+  };
+}
 
 useChangeHeader('Project Board', { name: 'project-dashboard' });
 useStoreWatch([{ store: projectStore }]);
@@ -18,20 +56,20 @@ const route = useRoute();
 const router = useRouter();
 const projectId = computed(() => String(route.params.projectId ?? '').trim());
 
-const project = computed(() => {
-  if (!projectId.value) return undefined;
-  return projectStore.items?.[projectId.value];
-});
+const project = computed(() => (projectId.value ? projectStore.items?.[projectId.value] : undefined));
 
 const isTaskSaving = ref(false);
-const isBranchLoading = ref(false);
+const settingsOpen = ref(false);
 
-const columnState = reactive<Record<TaskStatusType, { hidden: boolean; width: number }>>({
-  [TaskStatus.TODO]: { hidden: false, width: 300 },
-  [TaskStatus.DOING]: { hidden: false, width: 360 },
-  [TaskStatus.BLOCKED]: { hidden: false, width: 300 },
-  [TaskStatus.BUG]: { hidden: false, width: 300 },
-  [TaskStatus.DONE]: { hidden: false, width: 280 },
+const columnLayouts = ref<ColumnLayout[]>(createDefaultLayout());
+const taskOrderMap = reactive<TaskOrderMap>(createEmptyOrderMap());
+
+const taskLists = reactive<Record<string, any[]>>({
+  [TaskStatus.TODO]: [],
+  [TaskStatus.DOING]: [],
+  [TaskStatus.BLOCKED]: [],
+  [TaskStatus.BUG]: [],
+  [TaskStatus.DONE]: [],
 });
 
 const taskModal = reactive({
@@ -44,54 +82,43 @@ const taskModal = reactive({
   tag: [] as ColorTag[],
 });
 
-const selectedTaskDoc = computed(() => {
-  if (!taskModal.taskId) return undefined;
-  return projectTaskStore.items?.[taskModal.taskId];
+const selectedTaskDoc = computed(() => (taskModal.taskId ? projectTaskStore.items?.[taskModal.taskId] : undefined));
+const projectTasks = computed(() => (projectId.value ? projectTaskStore.forProject(projectId.value) : []));
+const tagsSuggestions = computed(() => tagStore.asColorTags());
+
+const visibleColumns = computed<ColumnLayout[]>({
+  get() {
+    return columnLayouts.value.filter((column) => !column.hidden);
+  },
+  set(nextVisible) {
+    const hidden = columnLayouts.value.filter((column) => column.hidden);
+    columnLayouts.value = [...nextVisible, ...hidden];
+  },
 });
 
-const projectTasks = computed(() => {
-  if (!projectId.value) return [];
-  return projectTaskStore.forProject(projectId.value);
-});
+const layoutStorageKey = computed(() => `hubcortex:board-layout:${projectId.value || 'unknown'}`);
+const taskOrderStorageKey = computed(() => `hubcortex:board-task-order:${projectId.value || 'unknown'}`);
 
-const tagsSuggestions = computed(() => {
-  if (!projectId.value) return [];
-  return projectTagStore.forProjectAsColorTags(projectId.value);
-});
-
-const visibleStatuses = computed(() =>
-  TASK_STATUSES.filter((status) => !columnState[status].hidden),
+watch(
+  columnLayouts,
+  () => {
+    persistBoardLayout();
+  },
+  { deep: true }
 );
 
-const groupedTasks = computed(() => {
-  const base: Record<TaskStatusType, typeof projectTasks.value> = {
-    [TaskStatus.TODO]: [],
-    [TaskStatus.DOING]: [],
-    [TaskStatus.BLOCKED]: [],
-    [TaskStatus.BUG]: [],
-    [TaskStatus.DONE]: [],
-  };
-
-  for (const task of projectTasks.value) {
-    base[task.status].push(task);
-  }
-
-  for (const status of TASK_STATUSES) {
-    base[status] = [...base[status]].sort((a, b) => {
-      const aTime = readTime(a.updatedAt) || readTime(a.createdAt);
-      const bTime = readTime(b.updatedAt) || readTime(b.createdAt);
-      return bTime - aTime;
-    });
-  }
-
-  return base;
+watch(projectTasks, () => {
+  syncTaskListsFromStore();
 });
 
 watch(
   projectId,
   async (id) => {
     projectTaskStore.stop();
-    projectTagStore.stop();
+    tagStore.stop();
+
+    loadBoardLayout();
+    loadTaskOrder();
 
     if (!id) return;
 
@@ -102,13 +129,22 @@ watch(
       return;
     }
 
-    await Promise.all([projectTaskStore.startForProject(id), projectTagStore.startForProject(id)]);
+    await Promise.all([projectTaskStore.startForProject(id), tagStore.start()]);
+    syncTaskListsFromStore();
   },
-  { immediate: true },
+  { immediate: true }
 );
 
 function getUpdater() {
   return String(_Auth?.uid ?? 'system');
+}
+
+function getStatusLabel(status: TaskStatusType) {
+  if (status === TaskStatus.TODO) return 'Todo';
+  if (status === TaskStatus.DOING) return 'Doing';
+  if (status === TaskStatus.BLOCKED) return 'Blocked';
+  if (status === TaskStatus.BUG) return 'Bug';
+  return 'Done';
 }
 
 function openCreateTask(status: TaskStatusType) {
@@ -148,7 +184,6 @@ async function saveTask() {
   }
 
   isTaskSaving.value = true;
-
   try {
     if (taskModal.mode === 'edit' && selectedTaskDoc.value) {
       await selectedTaskDoc.value.update({
@@ -158,14 +193,13 @@ async function saveTask() {
         tag: taskModal.tag,
         updateBy: getUpdater(),
       });
-
-      await projectTagStore.upsertForProject(projectId.value, taskModal.tag, getUpdater());
+      await tagStore.upsert(taskModal.tag, getUpdater());
       toast.success('Task aggiornata.');
       closeTaskModal();
       return;
     }
 
-    const created = await projectTaskStore.add({
+    await projectTaskStore.add({
       projectId: projectId.value,
       title,
       description: taskModal.description,
@@ -173,10 +207,9 @@ async function saveTask() {
       tag: taskModal.tag,
       updateBy: getUpdater(),
     });
-
-    await projectTagStore.upsertForProject(projectId.value, taskModal.tag, getUpdater());
+    await tagStore.upsert(taskModal.tag, getUpdater());
     toast.success('Task creata.');
-    openTaskDetail(created.id);
+    closeTaskModal();
   } catch (error) {
     toast.error(readErrorMessage(error));
   } finally {
@@ -195,51 +228,164 @@ async function deleteTask() {
   closeTaskModal();
 }
 
-async function createBranchForTask() {
-  if (!selectedTaskDoc.value || isBranchLoading.value) return;
+function onTaskDragChange(targetStatus: TaskStatusType, event: any) {
+  void handleTaskDragChange(targetStatus, event);
+}
 
-  isBranchLoading.value = true;
-  try {
-    const response = await callCreateProjectTaskBranch({
-      projectId: selectedTaskDoc.value.projectId,
-      taskId: selectedTaskDoc.value.id,
+function onTaskDragChangeForColumn(status: unknown, event: any) {
+  const normalized = status as TaskStatusType;
+  if (!TASK_STATUSES.includes(normalized)) return;
+  onTaskDragChange(normalized, event);
+}
+
+async function handleTaskDragChange(targetStatus: TaskStatusType, event: any) {
+  const addedTask = event?.added?.element;
+  if (addedTask && addedTask.status !== targetStatus) {
+    try {
+      await addedTask.update({ status: targetStatus, updateBy: getUpdater() });
+      toast.success(`Task spostata in ${getStatusLabel(targetStatus)}.`);
+    } catch (error) {
+      toast.error(readErrorMessage(error));
+      syncTaskListsFromStore();
+      return;
+    }
+  }
+
+  refreshTaskOrderFromLists();
+}
+
+function syncTaskListsFromStore() {
+  const grouped: Record<TaskStatusType, any[]> = {
+    [TaskStatus.TODO]: [],
+    [TaskStatus.DOING]: [],
+    [TaskStatus.BLOCKED]: [],
+    [TaskStatus.BUG]: [],
+    [TaskStatus.DONE]: [],
+  };
+
+  for (const task of projectTasks.value) {
+    grouped[task.status].push(task);
+  }
+
+  for (const status of TASK_STATUSES) {
+    const order = taskOrderMap[status] || [];
+    const indexMap = new Map(order.map((id, idx) => [id, idx]));
+
+    grouped[status].sort((a, b) => {
+      const ia = indexMap.get(a.id);
+      const ib = indexMap.get(b.id);
+      if (ia != null && ib != null) return ia - ib;
+      if (ia != null) return -1;
+      if (ib != null) return 1;
+      return readTime(b.updatedAt || b.createdAt) - readTime(a.updatedAt || a.createdAt);
     });
-    toast.success(`${response.message} ${response.branchName}`.trim());
-  } catch (error) {
-    toast.error(readErrorMessage(error));
-  } finally {
-    isBranchLoading.value = false;
+
+    taskLists[status] = grouped[status];
   }
 }
 
-async function deleteBranchForTask() {
-  if (!selectedTaskDoc.value || isBranchLoading.value) return;
-
-  const branchName = String(selectedTaskDoc.value.branchName ?? '').trim();
-  if (!branchName) {
-    toast.warning('Task senza branch associata.');
-    return;
+function getTaskList(status: unknown) {
+  const key = String(status);
+  if (!Array.isArray(taskLists[key])) {
+    taskLists[key] = [];
   }
+  return taskLists[key];
+}
 
-  const confirmInput = window.prompt(`Scrivi "${branchName}" per confermare eliminazione branch.`);
-  if (confirmInput == null || confirmInput.trim() !== branchName) {
-    toast.warning('Conferma non valida. Operazione annullata.');
-    return;
+function refreshTaskOrderFromLists() {
+  for (const status of TASK_STATUSES) {
+    taskOrderMap[status] = getTaskList(status).map((task) => String(task.id));
   }
+  persistTaskOrder();
+}
 
-  isBranchLoading.value = true;
+function loadBoardLayout() {
+  columnLayouts.value = createDefaultLayout();
+  if (typeof window === 'undefined') return;
+
   try {
-    const response = await callDeleteProjectTaskBranch({
-      projectId: selectedTaskDoc.value.projectId,
-      taskId: selectedTaskDoc.value.id,
-      branchName,
-    });
-    toast.success(response.message);
-  } catch (error) {
-    toast.error(readErrorMessage(error));
-  } finally {
-    isBranchLoading.value = false;
+    const raw = window.localStorage.getItem(layoutStorageKey.value);
+    if (!raw) return;
+
+    const parsed = JSON.parse(raw) as { columns?: Partial<ColumnLayout>[] };
+    if (!parsed?.columns || !Array.isArray(parsed.columns)) return;
+
+    const defaultMap = new Map(createDefaultLayout().map((item) => [item.status, item]));
+    const normalized: ColumnLayout[] = [];
+
+    for (const item of parsed.columns) {
+      const status = String(item?.status ?? '') as TaskStatusType;
+      if (!TASK_STATUSES.includes(status)) continue;
+      const fallback = defaultMap.get(status);
+      if (!fallback) continue;
+
+      normalized.push({
+        status,
+        hidden: Boolean(item.hidden),
+        width: normalizeWidth(item.width, fallback.width),
+      });
+      defaultMap.delete(status);
+    }
+
+    for (const missing of defaultMap.values()) {
+      normalized.push({ ...missing });
+    }
+
+    if (normalized.length) {
+      columnLayouts.value = normalized;
+    }
+  } catch {
+    columnLayouts.value = createDefaultLayout();
   }
+}
+
+function persistBoardLayout() {
+  if (typeof window === 'undefined') return;
+
+  const payload = {
+    columns: columnLayouts.value.map((item) => ({
+      status: item.status,
+      hidden: item.hidden,
+      width: normalizeWidth(item.width, 320),
+    })),
+  };
+
+  window.localStorage.setItem(layoutStorageKey.value, JSON.stringify(payload));
+}
+
+function loadTaskOrder() {
+  const defaults = createEmptyOrderMap();
+  for (const status of TASK_STATUSES) {
+    taskOrderMap[status] = defaults[status];
+  }
+
+  if (typeof window === 'undefined') return;
+
+  try {
+    const raw = window.localStorage.getItem(taskOrderStorageKey.value);
+    if (!raw) return;
+
+    const parsed = JSON.parse(raw) as Partial<Record<TaskStatusType, string[]>>;
+    for (const status of TASK_STATUSES) {
+      const list = parsed?.[status];
+      taskOrderMap[status] = Array.isArray(list) ? list.map((id) => String(id)) : [];
+    }
+  } catch {
+    for (const status of TASK_STATUSES) {
+      taskOrderMap[status] = [];
+    }
+  }
+}
+
+function persistTaskOrder() {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(taskOrderStorageKey.value, JSON.stringify(taskOrderMap));
+}
+
+function normalizeWidth(value: unknown, fallback: number) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(680, Math.max(240, Math.round(numeric)));
 }
 
 function readTime(value: unknown) {
@@ -247,18 +393,9 @@ function readTime(value: unknown) {
   if (typeof value === 'object' && value && 'toMillis' in value && typeof value.toMillis === 'function') {
     return Number(value.toMillis());
   }
-
   if (value instanceof Date) return value.getTime();
   const parsed = new Date(String(value)).getTime();
   return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function statusBadgeClass(status: TaskStatusType) {
-  if (status === TaskStatus.DONE) return 'text-bg-success';
-  if (status === TaskStatus.BLOCKED) return 'text-bg-warning';
-  if (status === TaskStatus.BUG) return 'text-bg-danger';
-  if (status === TaskStatus.DOING) return 'text-bg-primary';
-  return 'text-bg-secondary';
 }
 
 function readErrorMessage(error: unknown) {
@@ -267,89 +404,88 @@ function readErrorMessage(error: unknown) {
   }
   return 'Errore non gestito.';
 }
+
+useHeaderExtra(ProjectBoardHeaderExtra, { onOpenSettings: () => (settingsOpen.value = true) });
 </script>
 
 <template>
   <div class="container-fluid pb-t overflow-auto h-100">
-    <AppCard class="p-3 mb-3">
-      <div class="d-flex flex-wrap gap-2 justify-content-between align-items-start">
-        <div>
-          <h1 class="h5 mb-1">Board - {{ project?.name || '...' }}</h1>
-          <div class="small text-secondary">Colonne ridimensionabili, nascondibili e task editabili in modal.</div>
-        </div>
-        <div class="d-flex flex-wrap gap-2">
-          <RouterLink
-            v-if="projectId"
-            :to="{ name: 'project-messages', params: { projectId } }"
-            class="btn btn-sm btn-outline-dark"
-          >
-            Messaggi
-          </RouterLink>
-          <RouterLink :to="{ name: 'project-dashboard' }" class="btn btn-sm btn-outline-secondary">Dashboard</RouterLink>
-        </div>
-      </div>
-    </AppCard>
+    <draggable
+      v-model="visibleColumns"
+      item-key="status"
+      class="board-columns"
+      handle=".column-handle"
+      :animation="180"
+      ghost-class="drag-ghost"
+    >
+      <template #item="{ element: column }">
+        <section class="board-column" :style="{ width: `${column.width}px` }">
+          <header class="board-column-header">
+            <div class="d-flex align-items-center gap-2">
+              <Btn class="column-handle" variant="ghost" icon="drag_indicator" tooltip="Riordina colonna" />
+              <strong>{{ getStatusLabel(column.status) }}</strong>
+            </div>
+            <Btn variant="ghost" color="primary" icon="add" tooltip="Nuova task" @click="openCreateTask(column.status)" />
+          </header>
 
-    <AppCard class="p-3 mb-3">
-      <h2 class="h6 mb-2">Layout colonne</h2>
-      <div class="row g-2">
-        <div class="col-12 col-md-6 col-xl-4" v-for="status in TASK_STATUSES" :key="`layout-${status}`">
-          <div class="border rounded p-2 h-100">
-            <div class="d-flex justify-content-between align-items-center mb-1">
-              <span class="badge" :class="statusBadgeClass(status)">{{ status }}</span>
-              <label class="form-check-label small">
-                <input class="form-check-input me-1" type="checkbox" :checked="!columnState[status].hidden" @change="columnState[status].hidden = !($event.target as HTMLInputElement).checked" />
-                visibile
+          <draggable
+            :list="getTaskList(column.status)"
+            item-key="id"
+            class="task-list"
+            group="board-tasks"
+            :animation="180"
+            ghost-class="drag-ghost"
+            @change="onTaskDragChangeForColumn(column.status, $event)"
+          >
+            <template #item="{ element: task }">
+              <article class="task-tile" @click="openTaskDetail(task.id)">
+                <div class="task-title">{{ task.title }}</div>
+                <div class="task-desc" v-if="task.description">{{ task.description.replace(/<[^>]+>/g, ' ').trim() }}</div>
+                <div class="d-flex flex-wrap gap-1 mt-2" v-if="task.tag?.length">
+                  <span v-for="tag in task.tag" :key="`${task.id}-${tag.label}`" class="badge" :style="{ backgroundColor: tag.color }">
+                    {{ tag.label }}
+                  </span>
+                </div>
+              </article>
+            </template>
+
+            <template #footer>
+              <div v-if="!getTaskList(column.status).length" class="small text-secondary px-1">Nessuna task.</div>
+            </template>
+          </draggable>
+        </section>
+      </template>
+    </draggable>
+
+    <Modal
+      v-model="settingsOpen"
+      title="Layout colonne"
+      size="lg"
+      centered
+      scrollable
+      cancel-text="Chiudi"
+    >
+      <draggable :list="columnLayouts" item-key="status" handle=".layout-handle" :animation="180" class="d-flex flex-column gap-2">
+        <template #item="{ element: column }">
+          <div class="border rounded p-2">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="d-flex align-items-center gap-2">
+                <Btn class="layout-handle" variant="ghost" icon="drag_indicator" tooltip="Riordina colonna" />
+                <strong>{{ getStatusLabel(column.status) }}</strong>
+              </div>
+              <label class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" :checked="!column.hidden" @change="column.hidden = !($event.target as HTMLInputElement).checked" />
+                <span class="form-check-label">Visibile</span>
               </label>
             </div>
-            <input
-              class="form-range"
-              type="range"
-              min="240"
-              max="640"
-              step="20"
-              v-model.number="columnState[status].width"
-              :disabled="columnState[status].hidden"
-            />
-            <div class="small text-secondary">{{ columnState[status].width }}px</div>
+            <input class="form-range" type="range" min="240" max="680" step="20" v-model.number="column.width" />
+            <div class="small text-secondary">{{ normalizeWidth(column.width, 320) }}px</div>
           </div>
-        </div>
-      </div>
-    </AppCard>
+        </template>
+      </draggable>
+    </Modal>
 
-    <div class="board-columns">
-      <AppCard
-        v-for="status in visibleStatuses"
-        :key="`column-${status}`"
-        class="board-column p-2"
-        :style="{ width: `${columnState[status].width}px` }"
-      >
-        <div class="d-flex justify-content-between align-items-center mb-2 px-1">
-          <span class="badge" :class="statusBadgeClass(status)">{{ status }}</span>
-          <button class="btn btn-sm btn-outline-primary" @click="openCreateTask(status)">+ Task</button>
-        </div>
-
-        <div class="d-flex flex-column gap-2">
-          <button
-            v-for="task in groupedTasks[status]"
-            :key="task.id"
-            class="task-tile btn btn-light border text-start"
-            @click="openTaskDetail(task.id)"
-          >
-            <div class="fw-semibold">{{ task.title }}</div>
-            <div class="small text-secondary" v-if="task.branchName"><code>{{ task.branchName }}</code></div>
-            <div class="d-flex flex-wrap gap-1 mt-2" v-if="task.tag?.length">
-              <span v-for="tag in task.tag" :key="`${task.id}-${tag.label}`" class="badge" :style="{ backgroundColor: tag.color }">
-                {{ tag.label }}
-              </span>
-            </div>
-          </button>
-          <div v-if="!groupedTasks[status].length" class="small text-secondary px-1">Nessuna task.</div>
-        </div>
-      </AppCard>
-    </div>
-
-    <ModalCmp
+    <Modal
       v-model="taskModal.open"
       :title="taskModal.mode === 'create' ? 'Nuova task' : 'Dettaglio task'"
       size="xl"
@@ -368,7 +504,9 @@ function readErrorMessage(error: unknown) {
           <div class="col-12 col-lg-4">
             <label class="form-label small">Stato</label>
             <select v-model="taskModal.status" class="form-select">
-              <option v-for="status in TASK_STATUSES" :key="`modal-status-${status}`" :value="status">{{ status }}</option>
+              <option v-for="status in TASK_STATUSES" :key="`modal-status-${status}`" :value="status">
+                {{ getStatusLabel(status) }}
+              </option>
             </select>
           </div>
         </div>
@@ -379,7 +517,7 @@ function readErrorMessage(error: unknown) {
             name="task_tags"
             v-model="taskModal.tag"
             :suggestions="tagsSuggestions"
-            placeholder="Aggiungi tag condivisi (task/note/cmd)"
+            placeholder="Aggiungi tag condivisi"
             :allow-duplicates="false"
           />
         </div>
@@ -389,59 +527,92 @@ function readErrorMessage(error: unknown) {
           <FieldTiptap
             name="task_description"
             v-model="taskModal.description"
-            placeholder="Dettagli tecnici, checklist, note operative..."
+            placeholder="Dettagli task..."
             :toolbar-sticky-on="'top'"
           />
         </div>
 
-        <div class="border rounded p-3" v-if="taskModal.mode === 'edit'">
-          <div class="d-flex flex-wrap gap-2 align-items-center">
-            <button class="btn btn-sm btn-outline-primary" :disabled="isBranchLoading || isTaskSaving" @click.prevent="createBranchForTask">
-              Crea branch GitHub
-            </button>
-            <button
-              class="btn btn-sm btn-outline-danger"
-              :disabled="isBranchLoading || isTaskSaving || !selectedTaskDoc?.branchName"
-              @click.prevent="deleteBranchForTask"
-            >
-              Elimina branch GitHub
-            </button>
-            <code v-if="selectedTaskDoc?.branchName">{{ selectedTaskDoc?.branchName }}</code>
-            <span class="text-secondary small" v-else>Nessuna branch associata.</span>
-          </div>
-        </div>
-
         <div class="d-flex justify-content-between align-items-center">
-          <button
-            class="btn btn-outline-danger"
+          <Btn
             v-if="taskModal.mode === 'edit'"
-            :disabled="isTaskSaving || isBranchLoading"
+            variant="outline"
+            color="danger"
+            icon="delete"
+            :disabled="isTaskSaving"
             @click.prevent="deleteTask"
           >
             Elimina task
-          </button>
+          </Btn>
           <div class="small text-secondary ms-auto" v-if="isTaskSaving">Salvataggio in corso...</div>
         </div>
       </Form>
-    </ModalCmp>
+    </Modal>
   </div>
 </template>
 
 <style scoped>
 .board-columns {
   display: flex;
-  gap: 0.85rem;
-  overflow-x: auto;
+  gap: 0.9rem;
+  min-height: calc(100vh - 120px);
   padding-bottom: 0.5rem;
 }
 
 .board-column {
   flex: 0 0 auto;
-  max-height: calc(100vh - 320px);
-  overflow-y: auto;
+  border-radius: 0.9rem;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 10px 20px rgba(31, 42, 52, 0.08);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 145px);
+}
+
+.board-column-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.task-list {
+  padding: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  overflow: auto;
 }
 
 .task-tile {
-  white-space: normal;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 0.75rem;
+  background: #fff;
+  padding: 0.6rem;
+  cursor: pointer;
+}
+
+.task-tile:hover {
+  box-shadow: 0 8px 16px rgba(31, 42, 52, 0.12);
+}
+
+.task-title {
+  font-weight: 600;
+}
+
+.task-desc {
+  font-size: 0.83rem;
+  color: #6c757d;
+  margin-top: 0.25rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.drag-ghost {
+  opacity: 0.55;
 }
 </style>

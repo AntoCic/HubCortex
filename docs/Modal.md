@@ -36,8 +36,8 @@ const open = ref(false);
 <template>
   <button class="btn btn-primary" @click="open = true">Apri</button>
 
-  <ModalCmp v-model="open" title="Titolo" cancelText="Annulla" okText="OK">
+  <Modal v-model="open" title="Titolo" cancelText="Annulla" okText="OK">
     Contenuto della modal
-  </ModalCmp>
+  </Modal>
 </template>
 ```

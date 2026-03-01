@@ -1,7 +1,7 @@
 {
   "name": "hubcortex",
   "private": true,
-  "version": "0.0.7",
+  "version": "0.0.8",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -12,6 +12,7 @@
     "only-deploy": "firebase deploy --only hosting,firestore,functions,storage",
     "deploy": "npm run build && npx cic-bump && npx cic-push && npm run only-deploy",
     "deploy-no-push": "npm run build && npx cic-bump && npm run only-deploy",
+    "deploy-codex": "npm run build && npm run only-deploy",
     "docker:build": "docker compose -f docker-compose.emu.yml build --no-cache",
     "docker:c": "docker compose -f docker-compose.emu.yml exec firebase-emulator sh",
     "start": "docker compose -f docker-compose.emu.yml up",
@@ -22,6 +23,7 @@
     "emu:save-c": "docker compose -f docker-compose.emu.yml exec firebase-emulator node ./.firebase-emulators/emu.js save",
     "emu:list": "node ./.firebase-emulators/emu.js list",
     "emu:delete": "node ./.firebase-emulators/emu.js delete",
+    "i:cic": "npm uninstall firebase-secrets-cli && npm install -D firebase-secrets-cli@latest",
     "cic": "npx cic-index"
   },
   "dependencies": {
@@ -29,7 +31,7 @@
     "@vitejs/plugin-vue": "^5.0.4",
     "@wdns/vue-code-block": "^2.3.5",
     "bootstrap": "^5.3.8",
-    "cic-kit": "^0.0.32",
+    "cic-kit": "^0.0.33",
     "firebase": "^12.0.0",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.624",
@@ -44,7 +46,7 @@
     "@types/node": "^24.10.1",
     "@vitejs/plugin-vue": "^6.0.2",
     "@vue/tsconfig": "^0.8.1",
-    "firebase-secrets-cli": "^1.0.2",
+    "firebase-secrets-cli": "^1.0.3",
     "inquirer": "^13.2.1",
     "sass": "^1.97.3",
     "tsx": "^4.21.0",

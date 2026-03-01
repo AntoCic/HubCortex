@@ -1,20 +1,29 @@
 <script setup lang="ts">
-import { _Auth, FieldColorTag, FieldTiptap, toast, useChangeHeader, useStoreWatch, type ColorTag } from 'cic-kit';
-import { computed, reactive, ref, watch } from 'vue';
+import {
+  _Auth,
+  Btn,
+  FieldColorTag,
+  FieldTiptap,
+  Modal,
+  toast,
+  useChangeHeader,
+  useHeaderExtra,
+  useStoreWatch,
+  type ColorTag,
+} from 'cic-kit';
+import { computed, reactive, ref } from 'vue';
 import { Form } from 'vee-validate';
-import { useRoute, useRouter } from 'vue-router';
 import AppCard from '../../components/ui/AppCard.vue';
-import ModalCmp from '../../components/ui/ModalCmp.vue';
-import { projectCmdUtilStore } from '../../stores/projectCmdUtilStore';
-import { projectStore } from '../../stores/projectStore';
-import { projectTagStore } from '../../stores/projectTagStore';
+import { cmdStore } from '../../stores/cmdStore';
+import { tagStore } from '../../stores/tagStore';
+import CmdHeaderExtra from './CmdHeaderExtra.vue';
 
-useChangeHeader('Cmd Utils', { name: 'project-dashboard' });
-useStoreWatch([{ store: projectStore }]);
+useChangeHeader('Cmd', { name: 'home' });
+useStoreWatch([
+  { store: cmdStore },
+  { store: tagStore },
+]);
 
-const route = useRoute();
-const router = useRouter();
-const projectId = computed(() => String(route.params.projectId ?? '').trim());
 const search = ref('');
 const isSaving = ref(false);
 
@@ -22,80 +31,47 @@ const cmdModal = reactive({
   open: false,
   mode: 'create' as 'create' | 'edit',
   cmdId: '',
-  label: '',
+  title: '',
   command: '',
   description: '<p></p>',
   tag: [] as ColorTag[],
 });
 
-const project = computed(() => {
-  if (!projectId.value) return undefined;
-  return projectStore.items?.[projectId.value];
-});
-
-const cmdUtils = computed(() => {
-  if (!projectId.value) return [];
+const cmdItems = computed(() => {
   const query = search.value.trim().toLowerCase();
-  const list = projectCmdUtilStore
-    .forProject(projectId.value)
-    .sort((a, b) => readTime(b.updatedAt) - readTime(a.updatedAt));
-
+  const list = [...cmdStore.itemsActiveArray].sort((a, b) => readTime(b.updatedAt) - readTime(a.updatedAt));
   if (!query) return list;
 
   return list.filter((item) => {
     return (
-      item.label.toLowerCase().includes(query) ||
+      item.title.toLowerCase().includes(query) ||
       item.command.toLowerCase().includes(query) ||
       stripHtml(item.description ?? '').toLowerCase().includes(query)
     );
   });
 });
 
-const tagsSuggestions = computed(() => {
-  if (!projectId.value) return [];
-  return projectTagStore.forProjectAsColorTags(projectId.value);
-});
-
-const selectedCmdDoc = computed(() => (cmdModal.cmdId ? projectCmdUtilStore.items?.[cmdModal.cmdId] : undefined));
-
-watch(
-  projectId,
-  async (id) => {
-    projectCmdUtilStore.stop();
-    projectTagStore.stop();
-
-    if (!id) return;
-
-    const loadedProject = project.value ?? (await projectStore.getOne(id));
-    if (!loadedProject) {
-      toast.error('Progetto non trovato.');
-      await router.replace({ name: 'project-dashboard' });
-      return;
-    }
-
-    await Promise.all([projectCmdUtilStore.startForProject(id), projectTagStore.startForProject(id)]);
-  },
-  { immediate: true },
-);
+const tagsSuggestions = computed(() => tagStore.asColorTags());
+const selectedCmdDoc = computed(() => (cmdModal.cmdId ? cmdStore.items?.[cmdModal.cmdId] : undefined));
 
 function openCreateCmd() {
   cmdModal.open = true;
   cmdModal.mode = 'create';
   cmdModal.cmdId = '';
-  cmdModal.label = '';
+  cmdModal.title = '';
   cmdModal.command = '';
   cmdModal.description = '<p></p>';
   cmdModal.tag = [];
 }
 
 function openEditCmd(cmdId: string) {
-  const cmd = projectCmdUtilStore.items?.[cmdId];
+  const cmd = cmdStore.items?.[cmdId];
   if (!cmd) return;
 
   cmdModal.open = true;
   cmdModal.mode = 'edit';
   cmdModal.cmdId = cmd.id;
-  cmdModal.label = cmd.label;
+  cmdModal.title = cmd.title;
   cmdModal.command = cmd.command;
   cmdModal.description = cmd.description || '<p></p>';
   cmdModal.tag = cmd.tag ?? [];
@@ -106,42 +82,38 @@ function closeModal() {
 }
 
 async function saveCmd() {
-  if (!projectId.value) return;
-
-  const label = cmdModal.label.trim();
+  const title = cmdModal.title.trim();
   const command = cmdModal.command.trim();
-  if (!label || !command) {
-    toast.warning('Inserisci label e comando.');
+  if (!title || !command) {
+    toast.warning('Inserisci titolo e comando.');
     return;
   }
 
   isSaving.value = true;
-
   try {
     if (cmdModal.mode === 'edit' && selectedCmdDoc.value) {
       await selectedCmdDoc.value.update({
-        label,
+        title,
         command,
         description: cmdModal.description,
         tag: cmdModal.tag,
         updateBy: getUpdater(),
       });
-      await projectTagStore.upsertForProject(projectId.value, cmdModal.tag, getUpdater());
-      toast.success('Cmd util aggiornata.');
+      await tagStore.upsert(cmdModal.tag, getUpdater());
+      toast.success('Comando aggiornato.');
       closeModal();
       return;
     }
 
-    await projectCmdUtilStore.add({
-      projectId: projectId.value,
-      label,
+    await cmdStore.add({
+      title,
       command,
       description: cmdModal.description,
       tag: cmdModal.tag,
       updateBy: getUpdater(),
     });
-    await projectTagStore.upsertForProject(projectId.value, cmdModal.tag, getUpdater());
-    toast.success('Cmd util creata.');
+    await tagStore.upsert(cmdModal.tag, getUpdater());
+    toast.success('Comando creato.');
     closeModal();
   } catch (error) {
     toast.error(readErrorMessage(error));
@@ -154,7 +126,8 @@ async function deleteCmd() {
   if (!selectedCmdDoc.value) return;
   const confirmed = window.confirm('Eliminare il comando?');
   if (!confirmed) return;
-  await projectCmdUtilStore.delete(selectedCmdDoc.value.id);
+
+  await cmdStore.delete(selectedCmdDoc.value.id);
   toast.success('Comando eliminato.');
   closeModal();
 }
@@ -198,51 +171,46 @@ function readErrorMessage(error: unknown) {
   }
   return 'Errore non gestito.';
 }
+
+useHeaderExtra(CmdHeaderExtra, { onCreate: openCreateCmd });
 </script>
 
 <template>
   <div class="container pb-t overflow-auto h-100">
-    <AppCard class="p-3 mb-3">
-      <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-        <div>
-          <h1 class="h5 mb-1">Cmd Utils - {{ project?.name || '...' }}</h1>
-          <div class="small text-secondary">Snippet comandi, utility operative e note tecniche.</div>
-        </div>
-        <div class="d-flex flex-wrap gap-2">
-          <button class="btn btn-primary" @click="openCreateCmd">+ Nuovo comando</button>
-          <RouterLink v-if="projectId" :to="{ name: 'project-board', params: { projectId } }" class="btn btn-outline-secondary">
-            Board
-          </RouterLink>
-        </div>
-      </div>
-      <input v-model="search" class="form-control mt-3" type="search" placeholder="Cerca comando..." />
-    </AppCard>
+    <div class="search-bar-wrap">
+      <input v-model="search" class="form-control" type="search" placeholder="Cerca comando..." />
+    </div>
 
     <div class="row g-3">
-      <div v-if="!cmdUtils.length" class="col-12 text-secondary">Nessun comando disponibile.</div>
-      <div class="col-12 col-lg-6 col-xxl-4" v-for="cmd in cmdUtils" :key="cmd.id">
+      <div v-if="!cmdItems.length" class="col-12 text-secondary">Nessun comando disponibile.</div>
+
+      <div class="col-12 col-lg-6 col-xxl-4" v-for="cmd in cmdItems" :key="cmd.id">
         <AppCard class="p-3 h-100 cmd-card">
           <div class="d-flex justify-content-between align-items-start mb-2 gap-2">
-            <div class="fw-semibold">{{ cmd.label }}</div>
-            <button class="btn btn-sm btn-outline-primary" @click="copyCommand(cmd.command)">Copia</button>
+            <div class="fw-semibold text-truncate" :title="cmd.title">{{ cmd.title }}</div>
+            <div class="d-flex align-items-center gap-1">
+              <Btn variant="ghost" color="primary" icon="content_copy" tooltip="Copia comando" @click="copyCommand(cmd.command)" />
+              <Btn variant="ghost" color="dark" icon="edit" tooltip="Apri" @click="openEditCmd(cmd.id)" />
+            </div>
           </div>
 
           <code class="d-block p-2 rounded bg-light border mb-2 cmd-code">{{ cmd.command }}</code>
-          <div class="small text-secondary mb-2">{{ stripHtml(cmd.description || '') || 'Nessuna descrizione.' }}</div>
+          <div class="small text-secondary mb-2 cmd-preview">{{ stripHtml(cmd.description || '') || 'Nessuna descrizione.' }}</div>
+
           <div class="d-flex flex-wrap gap-1 mb-2" v-if="cmd.tag?.length">
             <span v-for="tag in cmd.tag" :key="`${cmd.id}-${tag.label}`" class="badge" :style="{ backgroundColor: tag.color }">
               {{ tag.label }}
             </span>
           </div>
-          <div class="d-flex justify-content-between align-items-center small text-secondary">
-            <span>{{ formatDate(cmd.updatedAt || cmd.createdAt) }}</span>
-            <button class="btn btn-sm btn-outline-dark" @click="openEditCmd(cmd.id)">Apri</button>
+
+          <div class="small text-secondary mt-auto">
+            {{ formatDate(cmd.updatedAt || cmd.createdAt) }}
           </div>
         </AppCard>
       </div>
     </div>
 
-    <ModalCmp
+    <Modal
       v-model="cmdModal.open"
       :title="cmdModal.mode === 'create' ? 'Nuovo comando' : 'Dettaglio comando'"
       size="xl"
@@ -255,14 +223,15 @@ function readErrorMessage(error: unknown) {
       <Form class="d-flex flex-column gap-3">
         <div class="row g-2">
           <div class="col-12 col-lg-5">
-            <label class="form-label small">Label</label>
-            <input v-model="cmdModal.label" class="form-control" placeholder="Build production" />
+            <label class="form-label small">Titolo</label>
+            <input v-model="cmdModal.title" class="form-control" placeholder="Build production" />
           </div>
           <div class="col-12 col-lg-7">
             <label class="form-label small">Comando</label>
             <input v-model="cmdModal.command" class="form-control font-monospace" placeholder="npm run build" />
           </div>
         </div>
+
         <div>
           <label class="form-label small">Tag condivisi</label>
           <FieldColorTag
@@ -272,6 +241,7 @@ function readErrorMessage(error: unknown) {
             placeholder="Aggiungi tag condivisi"
           />
         </div>
+
         <div>
           <label class="form-label small">Descrizione</label>
           <FieldTiptap
@@ -281,23 +251,44 @@ function readErrorMessage(error: unknown) {
             :toolbar-sticky-on="'top'"
           />
         </div>
+
         <div class="d-flex justify-content-between align-items-center">
-          <button class="btn btn-outline-danger" v-if="cmdModal.mode === 'edit'" :disabled="isSaving" @click.prevent="deleteCmd">
+          <Btn
+            v-if="cmdModal.mode === 'edit'"
+            variant="outline"
+            color="danger"
+            icon="delete"
+            :disabled="isSaving"
+            @click.prevent="deleteCmd"
+          >
             Elimina comando
-          </button>
+          </Btn>
           <div class="small text-secondary ms-auto" v-if="isSaving">Salvataggio...</div>
         </div>
       </Form>
-    </ModalCmp>
+    </Modal>
   </div>
 </template>
 
 <style scoped>
+.search-bar-wrap {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bs-body-bg, #fff);
+  padding: 0.1rem 0 0.65rem 0;
+}
+
 .cmd-card {
   border-top: 4px solid rgba(48, 71, 94, 0.7);
 }
 
 .cmd-code {
   white-space: pre-wrap;
+}
+
+.cmd-preview {
+  max-height: 4.8em;
+  overflow: hidden;
 }
 </style>

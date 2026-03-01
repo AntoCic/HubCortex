@@ -22,37 +22,33 @@ function normalizeTags(value: unknown) {
   return normalized.slice(0, 30);
 }
 
-export interface ProjectNoteData extends Partial<Timestampble> {
+export interface NoteData extends Partial<Timestampble> {
   id: string;
-  projectId: string;
   title: string;
   content: string;
   tag?: ColorTag[];
   updateBy: string;
 }
 
-export class ProjectNote extends FirestoreModel<ProjectNoteData> {
-  static collectionName = 'projectNotes';
+export class Note extends FirestoreModel<NoteData> {
+  static collectionName = 'notes';
 
-  projectId: string;
   title: string;
   content: string;
   tag?: ColorTag[];
   updateBy: string;
 
-  constructor(data: ProjectNoteData) {
+  constructor(data: NoteData) {
     super(data);
-    this.projectId = normalizeString(data.projectId, 120);
     this.title = normalizeString(data.title, 180);
     this.content = normalizeContent(data.content);
     this.tag = normalizeTags(data.tag);
     this.updateBy = normalizeString(data.updateBy, 120) || 'system';
   }
 
-  toData(): ProjectNoteData {
+  toData(): NoteData {
     return {
       id: this.id,
-      projectId: normalizeString(this.projectId, 120),
       title: normalizeString(this.title, 180),
       content: normalizeContent(this.content),
       tag: normalizeTags(this.tag),

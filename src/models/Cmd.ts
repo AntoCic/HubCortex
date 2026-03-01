@@ -22,42 +22,38 @@ function normalizeTags(value: unknown) {
   return normalized.slice(0, 30);
 }
 
-export interface ProjectCmdUtilData extends Partial<Timestampble> {
+export interface CmdData extends Partial<Timestampble> {
   id: string;
-  projectId: string;
-  label: string;
+  title: string;
   command: string;
   description?: string;
   tag?: ColorTag[];
   updateBy: string;
 }
 
-export class ProjectCmdUtil extends FirestoreModel<ProjectCmdUtilData> {
-  static collectionName = 'projectCmdUtils';
+export class Cmd extends FirestoreModel<CmdData> {
+  static collectionName = 'cmd';
 
-  projectId: string;
-  label: string;
+  title: string;
   command: string;
   description?: string;
   tag?: ColorTag[];
   updateBy: string;
 
-  constructor(data: ProjectCmdUtilData) {
+  constructor(data: CmdData) {
     super(data);
-    this.projectId = normalizeString(data.projectId, 120);
-    this.label = normalizeString(data.label, 180);
-    this.command = normalizeString(data.command, 400);
+    this.title = normalizeString(data.title, 180);
+    this.command = normalizeString(data.command, 600);
     this.description = data.description ? normalizeContent(data.description) : undefined;
     this.tag = normalizeTags(data.tag);
     this.updateBy = normalizeString(data.updateBy, 120) || 'system';
   }
 
-  toData(): ProjectCmdUtilData {
+  toData(): CmdData {
     return {
       id: this.id,
-      projectId: normalizeString(this.projectId, 120),
-      label: normalizeString(this.label, 180),
-      command: normalizeString(this.command, 400),
+      title: normalizeString(this.title, 180),
+      command: normalizeString(this.command, 600),
       description: this.description ? normalizeContent(this.description) : undefined,
       tag: normalizeTags(this.tag),
       updateBy: normalizeString(this.updateBy, 120) || 'system',

@@ -79,15 +79,15 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
-    match /projectTags/{id} {
+    match /tags/{id} {
       allow read, write: if isSignedIn();
     }
 
-    match /projectNotes/{id} {
+    match /notes/{id} {
       allow read, write: if isSignedIn();
     }
 
-    match /projectCmdUtils/{id} {
+    match /cmd/{id} {
       allow read, write: if isSignedIn();
     }
 

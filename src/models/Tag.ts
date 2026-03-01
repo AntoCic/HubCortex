@@ -18,44 +18,39 @@ function normalizeTag(value: unknown): ColorTag {
   return normalized ?? { label: 'tag', color: COLOR_TAG_DEFAULT_COLOR };
 }
 
-function buildProjectTagId(projectId: string, label: string) {
-  const project = normalizeString(projectId, 120);
+export function buildTagId(label: string) {
   const slug = normalizeColorTagLabel(label)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 72);
-  return `${project}__${slug || 'tag'}`;
+
+  return slug || 'tag';
 }
 
-export interface ProjectTagData extends Partial<Timestampble> {
+export interface TagData extends Partial<Timestampble> {
   id: string;
-  projectId: string;
   tag: ColorTag;
   updateBy: string;
 }
 
-export class ProjectTag extends FirestoreModel<ProjectTagData> {
-  static collectionName = 'projectTags';
+export class Tag extends FirestoreModel<TagData> {
+  static collectionName = 'tags';
 
-  projectId: string;
   tag: ColorTag;
   updateBy: string;
 
-  constructor(data: ProjectTagData) {
+  constructor(data: TagData) {
     super(data);
-    this.projectId = normalizeString(data.projectId, 120);
     this.tag = normalizeTag(data.tag);
     this.updateBy = normalizeString(data.updateBy, 120) || 'system';
   }
 
-  toData(): ProjectTagData {
-    const projectId = normalizeString(this.projectId, 120);
+  toData(): TagData {
     const tag = normalizeTag(this.tag);
 
     return {
-      id: buildProjectTagId(projectId, tag.label),
-      projectId,
+      id: buildTagId(tag.label),
       tag,
       updateBy: normalizeString(this.updateBy, 120) || 'system',
       ...this.timestampbleProps(),
@@ -63,14 +58,12 @@ export class ProjectTag extends FirestoreModel<ProjectTagData> {
   }
 }
 
-export function createProjectTagData(projectId: string, tag: ColorTag, updateBy: string): ProjectTagData {
-  const normalizedProjectId = normalizeString(projectId, 120);
+export function createTagData(tag: ColorTag, updateBy: string): TagData {
   const normalizedTag = normalizeTag(tag);
   const normalizedUpdateBy = normalizeString(updateBy, 120) || 'system';
 
   return {
-    id: buildProjectTagId(normalizedProjectId, normalizedTag.label),
-    projectId: normalizedProjectId,
+    id: buildTagId(normalizedTag.label),
     tag: normalizedTag,
     updateBy: normalizedUpdateBy,
   };

@@ -14,13 +14,15 @@ import AgentPromptsView from './views/admin/AgentPromptsView.vue';
 import PublicUsersView from './views/admin/PublicUsersView.vue';
 import GenericChatView from './views/ai/GenericChatView.vue';
 import ImageChatView from './views/ai/ImageChatView.vue';
+import CmdListView from './views/cmd/CmdListView.vue';
 import HomeView from './views/home/HomeView.vue';
+import NoteEditorView from './views/note/NoteEditorView.vue';
+import NotesListView from './views/note/NotesListView.vue';
 import ProjectBoardView from './views/projects/ProjectBoardView.vue';
-import ProjectCmdUtilsView from './views/projects/ProjectCmdUtilsView.vue';
 import ProjectDashboardView from './views/projects/ProjectDashboardView.vue';
 import ProjectFormView from './views/projects/ProjectFormView.vue';
 import ProjectMessagesView from './views/projects/ProjectMessagesView.vue';
-import ProjectNotesView from './views/projects/ProjectNotesView.vue';
+import TagsListView from './views/tag/TagsListView.vue';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -42,13 +44,11 @@ const routes: RouteRecordRaw[] = [
   { path: '/projects/:projectId/edit', name: 'project-edit', component: ProjectFormView, meta: { onlyAuth: true } },
   { path: '/projects/:projectId/board', name: 'project-board', component: ProjectBoardView, meta: { onlyAuth: true } },
   { path: '/projects/:projectId/messages', name: 'project-messages', component: ProjectMessagesView, meta: { onlyAuth: true } },
-  { path: '/projects/:projectId/notes', name: 'project-notes', component: ProjectNotesView, meta: { onlyAuth: true } },
-  {
-    path: '/projects/:projectId/cmd-utils',
-    name: 'project-cmd-utils',
-    component: ProjectCmdUtilsView,
-    meta: { onlyAuth: true },
-  },
+  { path: '/notes', name: 'notes', component: NotesListView, meta: { onlyAuth: true } },
+  { path: '/notes/new', name: 'note-new', component: NoteEditorView, meta: { onlyAuth: true } },
+  { path: '/notes/:noteId', name: 'note-edit', component: NoteEditorView, meta: { onlyAuth: true } },
+  { path: '/cmd', name: 'cmd', component: CmdListView, meta: { onlyAuth: true } },
+  { path: '/tags', name: 'tags', component: TagsListView, meta: { onlyAuth: true } },
   { path: '/projects', name: 'projects', redirect: { name: 'project-dashboard' }, meta: { onlyAuth: true } },
   { path: '/ai/chat', name: 'ai-chat', component: GenericChatView, meta: { onlyAuth: true, permission: 'AI' } },
   {

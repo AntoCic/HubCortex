@@ -1,2 +1,6 @@
 @use "bootstrap/scss/bootstrap";
 @use "cic-kit/style";
+
+header {
+    z-index: 10;
+}

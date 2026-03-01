@@ -1,14 +1,12 @@
 <script setup lang="ts">
 import { useChangeHeader } from 'cic-kit';
 import type { RouteLocationRaw } from 'vue-router';
-import AppCard from '../../components/ui/AppCard.vue';
 
 useChangeHeader('Hub Apps', { name: 'home' });
 
 type HomeApp = {
   id: string;
   title: string;
-  description: string;
   to: RouteLocationRaw;
   icon: string;
   iconClass: string;
@@ -18,15 +16,34 @@ const apps: HomeApp[] = [
   {
     id: 'project-dashboard',
     title: 'Project Dashboard',
-    description: 'Panoramica rapida su progetti, task ed errori.',
     to: { name: 'project-dashboard' },
     icon: 'PD',
     iconClass: 'app-icon-project',
   },
   {
+    id: 'notes',
+    title: 'Notes',
+    to: { name: 'notes' },
+    icon: 'NOTE',
+    iconClass: 'app-icon-note',
+  },
+  {
+    id: 'cmd',
+    title: 'Cmd',
+    to: { name: 'cmd' },
+    icon: 'CMD',
+    iconClass: 'app-icon-cmd',
+  },
+  {
+    id: 'tags',
+    title: 'Tags',
+    to: { name: 'tags' },
+    icon: 'TAG',
+    iconClass: 'app-icon-tag',
+  },
+  {
     id: 'ai-chat',
     title: 'Chat AI',
-    description: 'Chat testuale con i modelli AI.',
     to: { name: 'ai-chat' },
     icon: 'AI',
     iconClass: 'app-icon-chat',
@@ -34,7 +51,6 @@ const apps: HomeApp[] = [
   {
     id: 'ai-image-chat',
     title: 'Image Chat',
-    description: 'Chat AI dedicata alle immagini.',
     to: { name: 'ai-image-chat' },
     icon: 'IMG',
     iconClass: 'app-icon-image',
@@ -43,54 +59,62 @@ const apps: HomeApp[] = [
 </script>
 
 <template>
-  <div class="container pb-t overflow-auto h-100">
+  <div class="container pb-t overflow-auto h-100 pt-4">
     <div class="apps-grid">
-      <RouterLink v-for="app in apps" :key="app.id" :to="app.to" class="app-link text-decoration-none">
-        <AppCard class="app-tile p-3">
+      <RouterLink v-for="app in apps" :key="app.id" :to="app.to" class="app-shortcut text-decoration-none">
+        <div class="app-tile">
           <div class="app-icon" :class="app.iconClass">{{ app.icon }}</div>
-          <div class="fw-semibold text-dark">{{ app.title }}</div>
-          <div class="small text-secondary">{{ app.description }}</div>
-        </AppCard>
+          <div class="app-title">{{ app.title }}</div>
+        </div>
       </RouterLink>
     </div>
   </div>
 </template>
 
 <style scoped>
+
 .apps-grid {
   display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-}
-
-.app-link {
-  color: inherit;
+  gap: 1.2rem 0.7rem;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
 }
 
 .app-tile {
-  min-height: 180px;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.8rem;
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
-}
-
-.app-link:hover .app-tile {
-  transform: translateY(-4px);
-  box-shadow: 0 16px 30px rgba(26, 39, 52, 0.16);
+  align-items: center;
+  gap: 0.45rem;
 }
 
 .app-icon {
-  width: 54px;
-  height: 54px;
-  border-radius: 14px;
+  width: 62px;
+  height: 62px;
+  border-radius: 18px;
   display: grid;
   place-items: center;
   color: #fff;
-  font-size: 0.78rem;
+  font-size: 0.72rem;
   font-weight: 700;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
+  box-shadow: 0 8px 18px rgba(35, 46, 58, 0.16);
+}
+
+.app-title {
+  color: #222831;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.app-shortcut {
+  color: inherit;
+}
+
+.app-shortcut:focus-visible {
+  outline: 2px solid #1f5eff;
+  outline-offset: 4px;
+  border-radius: 6px;
 }
 
 .app-icon-project {
@@ -103,5 +127,17 @@ const apps: HomeApp[] = [
 
 .app-icon-image {
   background: linear-gradient(135deg, #ff7a45 0%, #f05454 100%);
+}
+
+.app-icon-note {
+  background: linear-gradient(135deg, #efb036 0%, #f05454 100%);
+}
+
+.app-icon-cmd {
+  background: linear-gradient(135deg, #30475e 0%, #222831 100%);
+}
+
+.app-icon-tag {
+  background: linear-gradient(135deg, #1f8a70 0%, #2f5233 100%);
 }
 </style>

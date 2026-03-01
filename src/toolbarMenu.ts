@@ -13,6 +13,24 @@ const toolbarOffcanvasTabConfigs: OffcanvasTabConfig[] = [
     onlyAuth: true,
   },
   {
+    name: 'Notes',
+    icon: 'sticky_note_2',
+    to: { name: 'notes' },
+    onlyAuth: true,
+  },
+  {
+    name: 'Cmd',
+    icon: 'terminal',
+    to: { name: 'cmd' },
+    onlyAuth: true,
+  },
+  {
+    name: 'Tag',
+    icon: 'sell',
+    to: { name: 'tags' },
+    onlyAuth: true,
+  },
+  {
     name: 'Chat AI',
     icon: 'chat',
     to: { name: 'ai-chat' },
