@@ -18,7 +18,7 @@ const isLoggedIn = computed(() => Boolean(_Auth?.isLoggedIn));
         <AppCard class="p-4 p-md-5 text-center">
           <img src="/img/logo/logo.png" alt="HubCortex" class="mx-auto mb-4" style="max-width: 180px" />
           <h1 class="h3 fw-bold text-primary">Gestione Progetti AI</h1>
-          <p class="text-secondary mb-4">
+          <p class="text-secondary mb-4"> 
             Struttura base pronta per progetti, task, stati e messaggi di errore.
           </p>
 
