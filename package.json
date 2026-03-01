@@ -1,7 +1,7 @@
 {
   "name": "hubcortex",
   "private": true,
-  "version": "0.0.9",
+  "version": "0.0.10",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,7 @@
     "notify:deploy": "node ./script/sendDeployNotification.js",
     "deploy": "npm run build && npx cic-bump && npx cic-push && npm run only-deploy && npm run notify:deploy",
     "deploy-no-push": "npm run build && npx cic-bump && npm run only-deploy && npm run notify:deploy",
-    "deploy-codex": "npm run build && npm run only-deploy && npm run notify:deploy",
+    "deploy:codex": "npm run build && npx cic-bump && npx cic-push",
     "docker:build": "docker compose -f docker-compose.emu.yml build --no-cache",
     "docker:c": "docker compose -f docker-compose.emu.yml exec firebase-emulator sh",
     "start": "docker compose -f docker-compose.emu.yml up",

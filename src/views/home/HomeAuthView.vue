@@ -21,7 +21,7 @@ const apps: HomeApp[] = [
     id: 'project-dashboard',
     title: 'Project Dashboard',
     to: { name: 'project-dashboard' },
-    icon: 'PD',
+    icon: 'dashboard_customize',
     iconClass: 'app-icon-project',
     permission: UserPermission.PROJECT_READ,
   },
@@ -29,28 +29,28 @@ const apps: HomeApp[] = [
     id: 'notes',
     title: 'Notes',
     to: { name: 'notes' },
-    icon: 'NOTE',
+    icon: 'note_stack',
     iconClass: 'app-icon-note',
   },
   {
     id: 'cmd',
     title: 'Cmd',
     to: { name: 'cmd' },
-    icon: 'CMD',
+    icon: 'terminal',
     iconClass: 'app-icon-cmd',
   },
   {
     id: 'tags',
     title: 'Tags',
     to: { name: 'tags' },
-    icon: 'TAG',
+    icon: 'label',
     iconClass: 'app-icon-tag',
   },
   {
     id: 'ai-chat',
     title: 'Chat AI',
     to: { name: 'ai-chat' },
-    icon: 'AI',
+    icon: 'chat',
     iconClass: 'app-icon-chat',
     permission: UserPermission.AI,
   },
@@ -58,7 +58,7 @@ const apps: HomeApp[] = [
     id: 'ai-image-chat',
     title: 'Image Chat',
     to: { name: 'ai-image-chat' },
-    icon: 'IMG',
+    icon: 'imagesmode',
     iconClass: 'app-icon-image',
     permission: UserPermission.AI,
   },
@@ -77,7 +77,9 @@ const visibleApps = computed(() =>
     <div class="apps-grid">
       <RouterLink v-for="app in visibleApps" :key="app.id" :to="app.to" class="app-shortcut text-decoration-none">
         <div class="app-tile">
-          <div class="app-icon" :class="app.iconClass">{{ app.icon }}</div>
+          <div class="app-icon" :class="app.iconClass">
+            <span class="material-symbols-rounded app-icon-symbol">{{ app.icon }}</span>
+          </div>
           <div class="app-title">{{ app.title }}</div>
         </div>
       </RouterLink>
@@ -107,10 +109,13 @@ const visibleApps = computed(() =>
   display: grid;
   place-items: center;
   color: #fff;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
   box-shadow: 0 8px 18px rgba(35, 46, 58, 0.16);
+}
+
+.app-icon-symbol {
+  font-size: 1.9rem;
+  line-height: 1;
+  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 24;
 }
 
 .app-title {
