@@ -1,4 +1,6 @@
 import type { OffcanvasTab } from 'cic-kit';
+import { UserPermission } from '@shared/enums/UserPermission';
+import { hasAppPermission } from './permissions';
 
 type OffcanvasTabConfig = OffcanvasTab & {
   onlyAuth?: boolean;
@@ -11,6 +13,7 @@ const toolbarOffcanvasTabConfigs: OffcanvasTabConfig[] = [
     icon: 'workspaces',
     to: { name: 'project-dashboard' },
     onlyAuth: true,
+    permission: UserPermission.PROJECT_READ,
   },
   {
     name: 'Notes',
@@ -35,44 +38,42 @@ const toolbarOffcanvasTabConfigs: OffcanvasTabConfig[] = [
     icon: 'chat',
     to: { name: 'ai-chat' },
     onlyAuth: true,
-    permission: 'AI',
+    permission: UserPermission.AI,
   },
   {
     name: 'Image AI',
     icon: 'image',
     to: { name: 'ai-image-chat' },
     onlyAuth: true,
-    permission: 'AI',
+    permission: UserPermission.AI,
   },
   {
     name: 'Prompt AI',
     icon: 'psychology',
     to: { name: 'agent-prompts' },
     onlyAuth: true,
-    permission: 'AI',
+    permission: UserPermission.AI,
   },
   {
     name: 'App Config',
     icon: 'settings',
     to: { name: 'app-config' },
     onlyAuth: true,
-    permission: 'SUPERADMIN',
+    permission: UserPermission.SUPERADMIN,
   },
   {
     name: 'Public Users',
     icon: 'groups',
     to: { name: 'public-users' },
     onlyAuth: true,
-    permission: 'ADMIN',
+    permission: UserPermission.ADMIN,
   },
 ];
 
 export function getToolbarOffcanvasTabs(isLoggedIn: boolean, permissions: string[]): OffcanvasTab[] {
-  const permissionSet = new Set((permissions ?? []).map((item) => String(item ?? '').trim()));
-
   return toolbarOffcanvasTabConfigs.filter((tab) => {
     if (tab.onlyAuth && !isLoggedIn) return false;
-    if (tab.permission && !permissionSet.has(tab.permission)) return false;
+    if (tab.permission && !hasAppPermission(permissions, tab.permission)) return false;
     return true;
   });
 }

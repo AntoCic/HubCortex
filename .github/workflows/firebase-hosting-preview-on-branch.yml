@@ -38,3 +38,44 @@ jobs:
         run: |
           echo "Preview URL: ${{ steps.deploy.outputs.details_url }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Expires: ${{ steps.deploy.outputs.expire_time_formatted }}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Notify HubCortex deploy message
+        env:
+          HUBCORTEX_INGEST_URL: https://europe-west1-hubcortex-33389.cloudfunctions.net/ingestProjectMessage
+          HUBCORTEX_API_KEY: ${{ secrets.HUBCORTEX_API_KEY }}
+          PREVIEW_URL: ${{ steps.deploy.outputs.details_url }}
+          CHANNEL_ID: ${{ steps.channel.outputs.channel_id }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          COMMIT_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          if [ -z "$HUBCORTEX_API_KEY" ]; then
+            echo "Secret HUBCORTEX_API_KEY non configurato." >&2
+            exit 1
+          fi
+          if [ -z "$PREVIEW_URL" ]; then
+            echo "Preview URL non disponibile dall'action di deploy." >&2
+            exit 1
+          fi
+
+          run_url="https://github.com/${REPOSITORY}/actions/runs/${RUN_ID}"
+          message="Deploy preview completato per branch ${BRANCH_NAME}."
+
+          payload=$(jq -n \
+            --arg preview "$PREVIEW_URL" \
+            --arg branch "$BRANCH_NAME" \
+            --arg channelId "$CHANNEL_ID" \
+            --arg commit "$COMMIT_SHA" \
+            --arg runUrl "$run_url" \
+            '{preview: $preview, branch: $branch, channelId: $channelId, commit: $commit, runUrl: $runUrl}')
+
+          body=$(jq -n \
+            --arg typeMessage "deploy" \
+            --arg message "$message" \
+            --argjson payload "$payload" \
+            '{typeMessage: $typeMessage, message: $message, payload: $payload, sendPush: true}')
+
+          curl --fail-with-body -sS -X POST "$HUBCORTEX_INGEST_URL" \
+            -H "Content-Type: application/json" \
+            -H "x-project-api-key: $HUBCORTEX_API_KEY" \
+            -d "$body"

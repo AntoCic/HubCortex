@@ -3,7 +3,7 @@ import { FirestoreModel, type Timestampble } from 'cic-kit';
 const PROJECT_API_KEY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 export const PROJECT_API_KEY_LENGTH = 24;
 
-export const DEFAULT_PROJECT_MESSAGE_TYPES = ['error', 'warning', 'info'] as const;
+export const DEFAULT_PROJECT_MESSAGE_TYPES = ['error', 'warning', 'info', 'deploy'] as const;
 
 export function normalizeMessageType(value: unknown) {
   return String(value ?? '')

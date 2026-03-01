@@ -9,9 +9,11 @@ import {
   setToolbarTab,
 } from 'cic-kit';
 import { createWebHistory, type RouteRecordRaw } from 'vue-router';
+import { UserPermission } from '@shared/enums/UserPermission';
 import AppConfigView from './views/admin/AppConfigView.vue';
 import AgentPromptsView from './views/admin/AgentPromptsView.vue';
 import PublicUsersView from './views/admin/PublicUsersView.vue';
+import { hasAppPermission } from './permissions';
 import GenericChatView from './views/ai/GenericChatView.vue';
 import ImageChatView from './views/ai/ImageChatView.vue';
 import CmdListView from './views/cmd/CmdListView.vue';
@@ -39,17 +41,47 @@ const routes: RouteRecordRaw[] = [
   { path: '/register', name: 'register', component: RegisterView, meta: { onlyNotAuth: true } },
   { path: '/reset-password', name: 'reset-password', component: ResetPasswordView, meta: { onlyNotAuth: true } },
 
-  { path: '/projects/dashboard', name: 'project-dashboard', component: ProjectDashboardView, meta: { onlyAuth: true } },
-  { path: '/projects/new', name: 'project-new', component: ProjectFormView, meta: { onlyAuth: true } },
-  { path: '/projects/:projectId/edit', name: 'project-edit', component: ProjectFormView, meta: { onlyAuth: true } },
-  { path: '/projects/:projectId/board', name: 'project-board', component: ProjectBoardView, meta: { onlyAuth: true } },
-  { path: '/projects/:projectId/messages', name: 'project-messages', component: ProjectMessagesView, meta: { onlyAuth: true } },
+  {
+    path: '/projects/dashboard',
+    name: 'project-dashboard',
+    component: ProjectDashboardView,
+    meta: { onlyAuth: true, permission: UserPermission.PROJECT_READ },
+  },
+  {
+    path: '/projects/new',
+    name: 'project-new',
+    component: ProjectFormView,
+    meta: { onlyAuth: true, permission: UserPermission.PROJECT_WRITE },
+  },
+  {
+    path: '/projects/:projectId/edit',
+    name: 'project-edit',
+    component: ProjectFormView,
+    meta: { onlyAuth: true, permission: UserPermission.PROJECT_WRITE },
+  },
+  {
+    path: '/projects/:projectId/board',
+    name: 'project-board',
+    component: ProjectBoardView,
+    meta: { onlyAuth: true, permission: UserPermission.PROJECT_READ },
+  },
+  {
+    path: '/projects/:projectId/messages',
+    name: 'project-messages',
+    component: ProjectMessagesView,
+    meta: { onlyAuth: true, permission: UserPermission.PROJECT_READ },
+  },
   { path: '/notes', name: 'notes', component: NotesListView, meta: { onlyAuth: true } },
   { path: '/notes/new', name: 'note-new', component: NoteEditorView, meta: { onlyAuth: true } },
   { path: '/notes/:noteId', name: 'note-edit', component: NoteEditorView, meta: { onlyAuth: true } },
   { path: '/cmd', name: 'cmd', component: CmdListView, meta: { onlyAuth: true } },
   { path: '/tags', name: 'tags', component: TagsListView, meta: { onlyAuth: true } },
-  { path: '/projects', name: 'projects', redirect: { name: 'project-dashboard' }, meta: { onlyAuth: true } },
+  {
+    path: '/projects',
+    name: 'projects',
+    redirect: { name: 'project-dashboard' },
+    meta: { onlyAuth: true, permission: UserPermission.PROJECT_READ },
+  },
   { path: '/ai/chat', name: 'ai-chat', component: GenericChatView, meta: { onlyAuth: true, permission: 'AI' } },
   {
     path: '/ai/image-chat',
@@ -110,7 +142,7 @@ router.beforeEach((to) => {
     return { name: 'login', query: { redirect: to.fullPath } };
   }
 
-  if (to.meta.permission && !_Auth?.user?.hasPermission?.(to.meta.permission)) {
+  if (to.meta.permission && !hasAppPermission(_Auth?.user?.permissions, to.meta.permission)) {
     return { name: 'unauthorized', query: { from: to.fullPath } };
   }
 

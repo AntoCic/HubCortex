@@ -23,12 +23,9 @@ function normalizeTypeMessage(value: unknown) {
 export interface ProjectMessageData extends Partial<Timestampble> {
   id: string;
   projectId: string;
-  taskId?: string;
   typeMessage: string;
   title?: string;
   message: string;
-  sourceProjectId?: string;
-  sourceLabel?: string;
   payload?: Record<string, unknown>;
   updateBy: string;
 }
@@ -37,24 +34,18 @@ export class ProjectMessage extends FirestoreModel<ProjectMessageData> {
   static collectionName = 'projectMessages';
 
   projectId: string;
-  taskId?: string;
   typeMessage: string;
   title?: string;
   message: string;
-  sourceProjectId?: string;
-  sourceLabel?: string;
   payload?: Record<string, unknown>;
   updateBy: string;
 
   constructor(data: ProjectMessageData) {
     super(data);
     this.projectId = normalizeString(data.projectId, 120);
-    this.taskId = normalizeString(data.taskId, 120) || undefined;
     this.typeMessage = normalizeTypeMessage(data.typeMessage);
     this.title = normalizeString(data.title, 160) || undefined;
     this.message = normalizeString(data.message, 4000);
-    this.sourceProjectId = normalizeString(data.sourceProjectId, 120) || undefined;
-    this.sourceLabel = normalizeString(data.sourceLabel, 120) || undefined;
     this.payload = normalizePayload(data.payload);
     this.updateBy = normalizeString(data.updateBy, 120) || 'system';
   }
@@ -63,12 +54,9 @@ export class ProjectMessage extends FirestoreModel<ProjectMessageData> {
     return {
       id: this.id,
       projectId: normalizeString(this.projectId, 120),
-      taskId: normalizeString(this.taskId, 120) || undefined,
       typeMessage: normalizeTypeMessage(this.typeMessage),
       title: normalizeString(this.title, 160) || undefined,
       message: normalizeString(this.message, 4000),
-      sourceProjectId: normalizeString(this.sourceProjectId, 120) || undefined,
-      sourceLabel: normalizeString(this.sourceLabel, 120) || undefined,
       payload: normalizePayload(this.payload),
       updateBy: normalizeString(this.updateBy, 120) || 'system',
       ...this.timestampbleProps(),

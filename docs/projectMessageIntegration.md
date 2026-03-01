@@ -1,102 +1,101 @@
-#### Integrazione Messaggi Progetto (Cross-Project)
+#### Integrazione Messaggi Progetto
 
-Questa guida spiega come un altro progetto Firebase puo inviare messaggi a HubCortex usando la `apiKey` del progetto destinatario.
+Questa guida descrive il formato aggiornato dei messaggi progetto.
+Il progetto destinatario viene identificato tramite `apiKey` (non tramite `projectId` nel messaggio).
 
-### Endpoint
+### Struttura messaggio
+
+```ts
+type ProjectMessageInput = {
+  typeMessage?: string;
+  title?: string;
+  message: string;
+  payload?: Record<string, unknown>;
+  sendPush?: boolean;
+};
+```
+
+Note:
+- `typeMessage` default: `info`
+- tipi base disponibili: `error`, `warning`, `info`, `deploy`
+- `sendPush` default: `true`
+- se `typeMessage` e `deploy` e `payload.preview` contiene un URL HTTP/HTTPS, la UI mostra link preview e pulsante copia.
+
+### Endpoint HTTP (integrazione esterna)
 
 Metodo: `POST`  
 URL:
 
 ```txt
-https://<FUNCTION_REGION>-<HUBCORTEX_PROJECT_ID>.cloudfunctions.net/ingestProjectMessage
-```
-
-Esempio (se region `europe-west1`):
-
-```txt
 https://europe-west1-hubcortex-33389.cloudfunctions.net/ingestProjectMessage
 ```
 
-### Autenticazione
+Autenticazione progetto:
+- consigliato header `x-project-api-key: <PROJECT_API_KEY>`
+- alternativa body `apiKey`
 
-Passa la chiave progetto nel header:
-
-```txt
-x-project-api-key: <PROJECT_API_KEY>
-```
-
-In alternativa puoi inviarla nel body (`apiKey`), ma l'header e consigliato.
-
-### Payload minimo
+Body esempio:
 
 ```json
 {
-  "message": "Deploy completato su production"
-}
-```
-
-### Payload completo
-
-```json
-{
-  "apiKey": "PROJECT_API_KEY_OPTIONAL_IF_HEADER_PRESENT",
-  "typeMessage": "deployment",
-  "title": "Release v2.3.1",
-  "message": "Deploy completato, 0 errori critici.",
-  "taskId": "task_abc123",
-  "sourceProjectId": "my-other-project",
-  "sourceLabel": "My Other Firebase Project",
-  "sendPush": true,
-  "updateBy": "external-ci",
+  "typeMessage": "deploy",
+  "title": "Deploy Preview",
+  "message": "Deploy preview completato",
   "payload": {
-    "env": "production",
-    "commit": "a1b2c3d4",
-    "pipelineUrl": "https://ci.example.com/job/123"
-  }
+    "preview": "https://hubcortex--br-feature-123-abc.web.app",
+    "branch": "feature/new-ui",
+    "commit": "abc1234"
+  },
+  "sendPush": true
 }
 ```
 
-### Tipi messaggio
+### Callable Firebase (uso interno UI)
 
-Tipi default:
-- `error`
-- `warning`
-- `info`
+Function: `publishProjectMessage`  
+Input richiesto:
 
-Puoi inviare anche tipi custom (`deployment`, `billing`, `security`, ecc.).  
-Se il tipo non esiste ancora nel progetto destinatario, viene aggiunto automaticamente a `typeMessage`.
+```ts
+type PublishProjectMessageRequest = {
+  apiKey: string;
+  typeMessage?: string;
+  title?: string;
+  message: string;
+  payload?: Record<string, unknown>;
+  sendPush?: boolean;
+};
+```
 
-### Esempio cURL
+### Esempio cURL rapido
 
 ```bash
 curl -X POST "https://europe-west1-hubcortex-33389.cloudfunctions.net/ingestProjectMessage" \
   -H "Content-Type: application/json" \
-  -H "x-project-api-key: <PROJECT_API_KEY>" \
+  -H "x-project-api-key: <HUBCORTEX_API_KEY>" \
   -d '{
-    "typeMessage": "deployment",
-    "title": "Deploy prod",
-    "message": "Deploy completato con successo",
-    "sourceLabel": "CI Pipeline",
+    "message": "Deploy preview completato",
+    "typeMessage": "deploy",
+    "payload": {
+      "preview": "https://hubcortex--br-feature-123-abc.web.app"
+    },
     "sendPush": true
   }'
 ```
 
-### Risposta
-
-Successo:
+### Risposta successo
 
 ```json
 {
   "ok": true,
   "id": "generatedMessageId",
   "projectId": "targetProjectId",
-  "typeMessage": "deployment",
+  "typeMessage": "info",
   "sentUsers": 2,
   "sentTokens": 4
 }
 ```
 
-Errore:
+### Risposta errore
 
 ```json
 {

@@ -4,7 +4,7 @@ import { HttpsError, onCall, onRequest } from 'firebase-functions/v2/https';
 import { db } from '../../config/firebaseAdmin.js';
 import { REGION } from '../../config/runtime.js';
 import { GITHUB_TOKEN } from '../../config/secret.js';
-import { requireAuth } from '../../utils/auth.js';
+import { requireAuth, requireGitHubManagePermission, requireProjectWritePermission } from '../../utils/auth.js';
 import { readOptionalBoolean, readOptionalString, readRequiredString } from '../../utils/validation.js';
 
 const PROJECTS_COLLECTION = 'projects';
@@ -12,7 +12,7 @@ const TASKS_COLLECTION = 'projectTasks';
 const PROJECT_MESSAGES_COLLECTION = 'projectMessages';
 const PROJECT_NOTIFICATION_PREFERENCES_COLLECTION = 'projectNotificationPreferences';
 const USERS_COLLECTION = 'users';
-const DEFAULT_MESSAGE_TYPES = ['error', 'warning', 'info'] as const;
+const DEFAULT_MESSAGE_TYPES = ['error', 'warning', 'info', 'deploy'] as const;
 
 type BranchRequest = {
   projectId: string;
@@ -28,13 +28,10 @@ type BranchResponse = {
 };
 
 type PublishProjectMessageRequest = {
-  projectId: string;
-  taskId?: string;
+  apiKey: string;
   typeMessage?: string;
   title?: string;
   message: string;
-  sourceProjectId?: string;
-  sourceLabel?: string;
   payload?: Record<string, unknown>;
   sendPush?: boolean;
 };
@@ -47,12 +44,9 @@ type PublishProjectMessageResponse = {
 };
 
 type MessagePayloadInput = {
-  taskId?: string;
   typeMessage: string;
   title?: string;
   message: string;
-  sourceProjectId?: string;
-  sourceLabel?: string;
   payload?: Record<string, unknown>;
 };
 
@@ -68,6 +62,7 @@ export const createProjectTaskBranch = onCall<BranchRequest>(
   },
   async (request): Promise<BranchResponse> => {
     const uid = requireAuth(request);
+    await requireGitHubManagePermission(request);
 
     const data = asObject(request.data);
     const projectId = readRequiredString(data, 'projectId', { maxLength: 120 });
@@ -127,6 +122,7 @@ export const deleteProjectTaskBranch = onCall<BranchRequest>(
   },
   async (request): Promise<BranchResponse> => {
     const uid = requireAuth(request);
+    await requireGitHubManagePermission(request);
 
     const data = asObject(request.data);
     const projectId = readRequiredString(data, 'projectId', { maxLength: 120 });
@@ -175,15 +171,16 @@ export const publishProjectMessage = onCall<PublishProjectMessageRequest>(
   },
   async (request): Promise<PublishProjectMessageResponse> => {
     const uid = requireAuth(request);
+    await requireProjectWritePermission(request);
 
     const data = asObject(request.data);
-    const projectId = readRequiredString(data, 'projectId', { maxLength: 120 });
+    const apiKey = readRequiredString(data, 'apiKey', { maxLength: 160 });
     const sendPush = readOptionalBoolean(data.sendPush, true);
     const messageInput = readMessagePayloadInput(data);
 
-    const project = await loadProjectById(projectId);
+    const project = await loadProjectByApiKey(apiKey);
     const messageResult = await createProjectMessage({
-      projectId,
+      projectId: project.id,
       projectRef: project.ref,
       projectData: project.data,
       input: messageInput,
@@ -257,19 +254,6 @@ export const ingestProjectMessage = onRequest(
   },
 );
 
-async function loadProjectById(projectId: string) {
-  const ref = db.collection(PROJECTS_COLLECTION).doc(projectId);
-  const snap = await ref.get();
-  if (!snap.exists) {
-    throw new HttpsError('not-found', 'Progetto non trovato.');
-  }
-  return {
-    id: snap.id,
-    ref,
-    data: asObject(snap.data()),
-  };
-}
-
 async function loadProjectByApiKey(apiKey: string) {
   const snap = await db
     .collection(PROJECTS_COLLECTION)
@@ -319,22 +303,14 @@ async function loadProjectAndTask(projectId: string, taskId: string) {
 
 function readMessagePayloadInput(input: Record<string, unknown>): MessagePayloadInput {
   const message = readRequiredString(input, 'message', { maxLength: 4000 });
-  const taskId = readOptionalString(input, 'taskId', { maxLength: 120 });
   const typeMessage = normalizeMessageType(readOptionalString(input, 'typeMessage', { maxLength: 48 }) || 'info');
   const title = readOptionalString(input, 'title', { maxLength: 160 });
-  const sourceProjectId = readOptionalString(input, 'sourceProjectId', { maxLength: 120 });
-  const sourceLabel =
-    readOptionalString(input, 'sourceLabel', { maxLength: 120 }) ||
-    readOptionalString(input, 'source', { maxLength: 120 });
   const payload = asOptionalObject(input.payload);
 
   return {
-    taskId: taskId || undefined,
     typeMessage,
     title: title || undefined,
     message,
-    sourceProjectId: sourceProjectId || undefined,
-    sourceLabel: sourceLabel || undefined,
     payload,
   };
 }
@@ -364,21 +340,26 @@ async function createProjectMessage(params: {
   }
 
   const messageRef = db.collection(PROJECT_MESSAGES_COLLECTION).doc();
-  await messageRef.set({
+  const messageData: Record<string, unknown> = {
     id: messageRef.id,
     projectId,
-    taskId: input.taskId,
     typeMessage,
-    title: input.title,
     message: input.message,
-    sourceProjectId: input.sourceProjectId,
-    sourceLabel: input.sourceLabel,
-    payload: input.payload,
     updateBy,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
     deleteAt: null,
-  });
+  };
+
+  if (input.title) {
+    messageData.title = input.title;
+  }
+
+  if (input.payload) {
+    messageData.payload = input.payload;
+  }
+
+  await messageRef.set(messageData);
 
   if (!sendPush) {
     return {
@@ -700,7 +681,7 @@ function toStringArray(value: unknown) {
 
 function asOptionalObject(value: unknown) {
   if (value == null) return undefined;
-  return asObject(value);
+  return stripUndefinedDeep(asObject(value));
 }
 
 function asObject(value: unknown) {
@@ -708,6 +689,35 @@ function asObject(value: unknown) {
     throw new HttpsError('invalid-argument', 'Payload non valido.');
   }
   return value as Record<string, unknown>;
+}
+
+function stripUndefinedDeep(value: unknown): Record<string, unknown> {
+  const output: Record<string, unknown> = {};
+
+  for (const [key, item] of Object.entries(asObject(value))) {
+    const sanitized = sanitizeValue(item);
+    if (sanitized !== undefined) {
+      output[key] = sanitized;
+    }
+  }
+
+  return output;
+}
+
+function sanitizeValue(value: unknown): unknown {
+  if (value === undefined) return undefined;
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => sanitizeValue(item))
+      .filter((item) => item !== undefined);
+  }
+
+  if (value && typeof value === 'object') {
+    return stripUndefinedDeep(value);
+  }
+
+  return value;
 }
 
 function readHttpStatus(error: unknown) {

@@ -2,13 +2,10 @@ import { ensureFirebase, functions } from 'cic-kit';
 import { httpsCallable } from 'firebase/functions';
 
 export type PublishProjectMessageRequest = {
-  projectId: string;
-  taskId?: string;
+  apiKey: string;
   typeMessage?: string;
   title?: string;
   message: string;
-  sourceProjectId?: string;
-  sourceLabel?: string;
   payload?: Record<string, unknown>;
   sendPush?: boolean;
 };

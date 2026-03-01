@@ -35,6 +35,14 @@ service cloud.firestore {
       return hasPermission('SUPERADMIN');
     }
 
+    function hasProjectWritePermission() {
+      return hasPermission('PROJECT_WRITE') || hasPermission('MANAGE_PROJECT') || isAdmin();
+    }
+
+    function hasProjectReadPermission() {
+      return hasProjectWritePermission() || hasPermission('PROJECT_READ');
+    }
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
@@ -52,6 +60,14 @@ service cloud.firestore {
       allow delete: if isOwner(userId) || isSuperAdmin();
 
       match /settings/{id} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /notes/{id} {
+        allow read, write: if isOwner(userId) || isAdmin();
+      }
+
+      match /cmd/{id} {
         allow read, write: if isOwner(userId) || isAdmin();
       }
     }
@@ -72,51 +88,44 @@ service cloud.firestore {
     }
 
     match /projects/{id} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn() && hasProjectReadPermission();
+      allow write: if isSignedIn() && hasProjectWritePermission();
     }
 
     match /projectTasks/{id} {
-      allow read, write: if isSignedIn();
+      allow read: if isSignedIn() && hasProjectReadPermission();
+      allow write: if isSignedIn() && hasProjectWritePermission();
     }
 
     match /tags/{id} {
       allow read, write: if isSignedIn();
     }
 
-    match /notes/{id} {
-      allow read, write: if isSignedIn();
-    }
-
-    match /cmd/{id} {
-      allow read, write: if isSignedIn();
-    }
-
     match /projectMessages/{id} {
-      allow read: if isSignedIn();
-      allow write: if hasPermission('MANAGE_PROJECT');
+      allow read: if isSignedIn() && hasProjectReadPermission();
+      allow write: if isSignedIn() && hasProjectWritePermission();
     }
 
     match /projectNotificationPreferences/{id} {
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow read: if isSignedIn() && hasProjectReadPermission() && (
+        resource.data.userId == request.auth.uid || isAdmin()
+      );
 
-      allow create: if isSignedIn() && (
+      allow create: if isSignedIn() && hasProjectReadPermission() && (
         request.resource.data.userId == request.auth.uid || isAdmin()
       );
 
-      allow update: if isSignedIn() && (
+      allow update: if isSignedIn() && hasProjectReadPermission() && (
         (
           resource.data.userId == request.auth.uid &&
           request.resource.data.userId == resource.data.userId
         ) || isAdmin()
       );
 
-      allow delete: if isSignedIn() && (
+      allow delete: if isSignedIn() && hasProjectReadPermission() && (
         resource.data.userId == request.auth.uid || isAdmin()
       );
     }
 
-    match /settings/{id} {
-      allow read, write: if isSignedIn();
-    }
   }
 }

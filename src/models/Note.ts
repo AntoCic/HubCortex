@@ -1,5 +1,6 @@
 import {
   FirestoreModel,
+  _Auth,
   normalizeTiptapHtml,
   toColorTagArray,
   type ColorTag,
@@ -31,7 +32,13 @@ export interface NoteData extends Partial<Timestampble> {
 }
 
 export class Note extends FirestoreModel<NoteData> {
-  static collectionName = 'notes';
+  static get collectionName() {
+    const uid = String(_Auth?.uid ?? '').trim();
+    if (!uid) {
+      throw new Error('Impossibile usare Note: nessun utente loggato.');
+    }
+    return `/users/${uid}/notes`;
+  }
 
   title: string;
   content: string;

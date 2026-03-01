@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Btn, useChangeHeader, useHeaderExtra, useStoreWatch } from 'cic-kit';
+import { _Auth, Btn, useChangeHeader, useHeaderExtra, useStoreWatch } from 'cic-kit';
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import AppCard from '../../components/ui/AppCard.vue';
+import { canWriteProjects } from '../../permissions';
 import { projectMessageStore } from '../../stores/projectMessageStore';
 import { projectStore } from '../../stores/projectStore';
 import { projectTaskStore } from '../../stores/projectTaskStore';
@@ -17,6 +18,7 @@ useStoreWatch([
 
 const router = useRouter();
 const search = ref('');
+const canWriteProjectData = computed(() => canWriteProjects(_Auth?.user?.permissions));
 
 const projects = computed(() => {
   const query = search.value.trim().toLowerCase();
@@ -43,10 +45,14 @@ function projectMessageCount(projectId: string) {
 }
 
 function openCreateProject() {
+  if (!canWriteProjectData.value) return;
   void router.push({ name: 'project-new' });
 }
 
-useHeaderExtra(ProjectDashboardHeaderExtra, { onCreate: openCreateProject });
+useHeaderExtra(ProjectDashboardHeaderExtra, {
+  onCreate: openCreateProject,
+  canCreate: () => canWriteProjectData.value,
+});
 </script>
 
 <template>
@@ -72,7 +78,11 @@ useHeaderExtra(ProjectDashboardHeaderExtra, { onCreate: openCreateProject });
               <RouterLink class="text-decoration-none" :to="{ name: 'project-messages', params: { projectId: project.id } }">
                 <Btn variant="ghost" color="dark" icon="chat" tooltip="Messaggi" />
               </RouterLink>
-              <RouterLink class="text-decoration-none" :to="{ name: 'project-edit', params: { projectId: project.id } }">
+              <RouterLink
+                v-if="canWriteProjectData"
+                class="text-decoration-none"
+                :to="{ name: 'project-edit', params: { projectId: project.id } }"
+              >
                 <Btn variant="ghost" color="secondary" icon="edit" tooltip="Modifica" />
               </RouterLink>
             </div>

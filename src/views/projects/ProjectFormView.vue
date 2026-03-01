@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { _Auth, toast, useChangeHeader, useStoreWatch } from 'cic-kit';
-import { computed, reactive, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import AppCard from '../../components/ui/AppCard.vue';
 import {
@@ -9,9 +9,16 @@ import {
   normalizeProjectMessageTypes,
   type Project,
 } from '../../models/Project';
+import { appConfigStore } from '../../stores/appConfigStore';
 import { projectStore } from '../../stores/projectStore';
 
-useStoreWatch([{ store: projectStore }]);
+type GitHubRepoOption = {
+  id: number;
+  fullName: string;
+  url: string;
+};
+
+useStoreWatch([{ store: projectStore }, { store: appConfigStore, checkLogin: false }]);
 useChangeHeader('Progetto', { name: 'project-dashboard' });
 
 const route = useRoute();
@@ -27,6 +34,11 @@ const form = reactive({
   hostingUrl: '',
   typeMessageText: '',
 });
+const selectedRepoUrl = ref('');
+const githubRepoOptions = ref<GitHubRepoOption[]>([]);
+const isLoadingRepos = ref(false);
+const repoLoadError = ref('');
+const githubOrg = computed(() => appConfigStore.getConfigData().githubOrg.trim());
 
 const projectDoc = computed<Project | undefined>(() => {
   if (!routeProjectId.value) return undefined;
@@ -53,6 +65,35 @@ watch(
   { immediate: true },
 );
 
+watch(
+  githubOrg,
+  () => {
+    void loadGitHubRepos();
+  },
+  { immediate: true }
+);
+
+watch(
+  () => form.repoUrl,
+  (value) => {
+    const normalized = String(value ?? '').trim();
+    if (!normalized) {
+      selectedRepoUrl.value = '';
+      return;
+    }
+
+    const match = githubRepoOptions.value.find((item) => item.url === normalized);
+    selectedRepoUrl.value = match?.url ?? '';
+  },
+  { immediate: true }
+);
+
+watch(selectedRepoUrl, (value) => {
+  const normalized = String(value ?? '').trim();
+  if (!normalized) return;
+  form.repoUrl = normalized;
+});
+
 function fillFromProject(project: Project) {
   form.name = project.name;
   form.description = project.description ?? '';
@@ -71,6 +112,42 @@ function resetForm() {
   form.typeMessageText = '';
 }
 
+async function loadGitHubRepos() {
+  githubRepoOptions.value = [];
+  repoLoadError.value = '';
+
+  const org = githubOrg.value;
+  if (!org || org.toLowerCase() === 'your-org') return;
+
+  isLoadingRepos.value = true;
+
+  try {
+    const response = await fetch(
+      `https://api.github.com/orgs/${encodeURIComponent(org)}/repos?per_page=100&sort=updated`,
+    );
+
+    if (!response.ok) {
+      throw new Error(`GitHub API error (${response.status})`);
+    }
+
+    const payload = (await response.json()) as Array<Record<string, unknown>>;
+    githubRepoOptions.value = payload
+      .map((item) => {
+        const id = Number(item.id ?? 0);
+        const fullName = String(item.full_name ?? '').trim();
+        const url = String(item.html_url ?? '').trim();
+        if (!id || !fullName || !url) return undefined;
+        return { id, fullName, url };
+      })
+      .filter((item): item is GitHubRepoOption => Boolean(item))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName));
+  } catch (error) {
+    repoLoadError.value = readErrorMessage(error);
+  } finally {
+    isLoadingRepos.value = false;
+  }
+}
+
 function getUpdater() {
   return String(_Auth?.uid ?? 'system');
 }
@@ -81,6 +158,13 @@ function parseTypeMessageInput(value: string) {
     .map((item) => item.trim())
     .filter(Boolean);
   return normalizeProjectMessageTypes(raw);
+}
+
+function readErrorMessage(error: unknown) {
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message?: unknown }).message ?? 'Errore non gestito.');
+  }
+  return 'Errore non gestito.';
 }
 
 async function saveProject() {
@@ -160,7 +244,19 @@ async function regenerateApiKey() {
             </div>
             <div class="col-12 col-lg-6">
               <label class="form-label small">Repository URL (GitHub)</label>
+              <select v-model="selectedRepoUrl" class="form-select mb-2" :disabled="isLoadingRepos || !githubRepoOptions.length">
+                <option value="">
+                  {{ isLoadingRepos
+                    ? 'Caricamento repository...'
+                    : githubRepoOptions.length
+                      ? 'Seleziona repository da GitHub'
+                      : 'Nessun repository disponibile da selezione' }}
+                </option>
+                <option v-for="repo in githubRepoOptions" :key="repo.id" :value="repo.url">{{ repo.fullName }}</option>
+              </select>
               <input v-model="form.repoUrl" class="form-control" placeholder="https://github.com/org/repo" />
+              <div class="small text-secondary mt-1">La select compila solo il campo. Puoi sempre inserirlo/modificarlo a mano.</div>
+              <div v-if="repoLoadError" class="small text-danger mt-1">{{ repoLoadError }}</div>
             </div>
             <div class="col-12 col-lg-6">
               <label class="form-label small">Hosting URL</label>
@@ -171,7 +267,7 @@ async function regenerateApiKey() {
               <input
                 v-model="form.typeMessageText"
                 class="form-control"
-                placeholder="error, warning, info, deployment, billing"
+                placeholder="error, warning, info, deploy, billing"
               />
             </div>
           </div>

@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { useChangeHeader } from 'cic-kit';
+import { _Auth, useChangeHeader } from 'cic-kit';
+import { UserPermission } from '@shared/enums/UserPermission';
+import { computed } from 'vue';
 import type { RouteLocationRaw } from 'vue-router';
+import { hasAppPermission } from '../../permissions';
 
 useChangeHeader('Hub Apps', { name: 'home' });
 
@@ -10,6 +13,7 @@ type HomeApp = {
   to: RouteLocationRaw;
   icon: string;
   iconClass: string;
+  permission?: string;
 };
 
 const apps: HomeApp[] = [
@@ -19,6 +23,7 @@ const apps: HomeApp[] = [
     to: { name: 'project-dashboard' },
     icon: 'PD',
     iconClass: 'app-icon-project',
+    permission: UserPermission.PROJECT_READ,
   },
   {
     id: 'notes',
@@ -47,6 +52,7 @@ const apps: HomeApp[] = [
     to: { name: 'ai-chat' },
     icon: 'AI',
     iconClass: 'app-icon-chat',
+    permission: UserPermission.AI,
   },
   {
     id: 'ai-image-chat',
@@ -54,14 +60,22 @@ const apps: HomeApp[] = [
     to: { name: 'ai-image-chat' },
     icon: 'IMG',
     iconClass: 'app-icon-image',
+    permission: UserPermission.AI,
   },
 ];
+
+const visibleApps = computed(() =>
+  apps.filter((app) => {
+    if (!app.permission) return true;
+    return hasAppPermission(_Auth?.user?.permissions, app.permission);
+  })
+);
 </script>
 
 <template>
   <div class="container pb-t overflow-auto h-100 pt-4">
     <div class="apps-grid">
-      <RouterLink v-for="app in apps" :key="app.id" :to="app.to" class="app-shortcut text-decoration-none">
+      <RouterLink v-for="app in visibleApps" :key="app.id" :to="app.to" class="app-shortcut text-decoration-none">
         <div class="app-tile">
           <div class="app-icon" :class="app.iconClass">{{ app.icon }}</div>
           <div class="app-title">{{ app.title }}</div>

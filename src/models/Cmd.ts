@@ -1,5 +1,6 @@
 import {
   FirestoreModel,
+  _Auth,
   normalizeTiptapHtml,
   toColorTagArray,
   type ColorTag,
@@ -32,7 +33,13 @@ export interface CmdData extends Partial<Timestampble> {
 }
 
 export class Cmd extends FirestoreModel<CmdData> {
-  static collectionName = 'cmd';
+  static get collectionName() {
+    const uid = String(_Auth?.uid ?? '').trim();
+    if (!uid) {
+      throw new Error('Impossibile usare Cmd: nessun utente loggato.');
+    }
+    return `/users/${uid}/cmd`;
+  }
 
   title: string;
   command: string;

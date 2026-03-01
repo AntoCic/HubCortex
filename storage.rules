@@ -31,6 +31,14 @@ service firebase.storage {
       return hasPermission('ADMIN') || hasPermission('SUPERADMIN');
     }
 
+    function hasProjectWritePermission() {
+      return hasPermission('PROJECT_WRITE') || hasPermission('MANAGE_PROJECT') || isAdmin();
+    }
+
+    function hasProjectReadPermission() {
+      return hasProjectWritePermission() || hasPermission('PROJECT_READ');
+    }
+
     function isValidUpload(maxMb, contentType) {
       return request.resource != null
         && request.resource.size < maxMb * 1024 * 1024
@@ -41,9 +49,9 @@ service firebase.storage {
     }
 
     match /public/projects/{projectId}/{path=**} {
-      allow read: if isSignedIn();
-      allow write: if isSignedIn() && isValidUpload(25, null);
-      allow delete: if isSignedIn();
+      allow read: if isSignedIn() && hasProjectReadPermission();
+      allow write: if isSignedIn() && hasProjectWritePermission() && isValidUpload(25, null);
+      allow delete: if isSignedIn() && hasProjectWritePermission();
     }
 
     match /public/{path=**} {

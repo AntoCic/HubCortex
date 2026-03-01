@@ -16,6 +16,8 @@ import { Form } from 'vee-validate';
 import draggable from 'vuedraggable';
 import { useRoute, useRouter } from 'vue-router';
 import { TaskStatus, TASK_STATUSES, type TaskStatusType } from '@shared/enums/TaskStatus';
+import { callCreateProjectTaskBranch, callDeleteProjectTaskBranch } from '../../call/callProjectBranch';
+import { canManageGitHub, canWriteProjects } from '../../permissions';
 import { projectStore } from '../../stores/projectStore';
 import { projectTaskStore } from '../../stores/projectTaskStore';
 import { tagStore } from '../../stores/tagStore';
@@ -57,9 +59,13 @@ const router = useRouter();
 const projectId = computed(() => String(route.params.projectId ?? '').trim());
 
 const project = computed(() => (projectId.value ? projectStore.items?.[projectId.value] : undefined));
+const canWriteProjectData = computed(() => canWriteProjects(_Auth?.user?.permissions));
+const canManageProjectGitHub = computed(() => canManageGitHub(_Auth?.user?.permissions));
 
 const isTaskSaving = ref(false);
+const isBranchSyncing = ref(false);
 const settingsOpen = ref(false);
+const branchInput = ref('');
 
 const columnLayouts = ref<ColumnLayout[]>(createDefaultLayout());
 const taskOrderMap = reactive<TaskOrderMap>(createEmptyOrderMap());
@@ -148,6 +154,11 @@ function getStatusLabel(status: TaskStatusType) {
 }
 
 function openCreateTask(status: TaskStatusType) {
+  if (!canWriteProjectData.value) {
+    toast.warning('Permesso PROJECT_WRITE richiesto.');
+    return;
+  }
+
   taskModal.open = true;
   taskModal.mode = 'create';
   taskModal.taskId = '';
@@ -155,6 +166,7 @@ function openCreateTask(status: TaskStatusType) {
   taskModal.description = '<p></p>';
   taskModal.status = status;
   taskModal.tag = [];
+  branchInput.value = '';
 }
 
 function openTaskDetail(taskId: string) {
@@ -168,6 +180,7 @@ function openTaskDetail(taskId: string) {
   taskModal.description = task.description || '<p></p>';
   taskModal.status = task.status;
   taskModal.tag = task.tag ?? [];
+  branchInput.value = String(task.branchName ?? '');
 }
 
 function closeTaskModal() {
@@ -176,6 +189,10 @@ function closeTaskModal() {
 
 async function saveTask() {
   if (!projectId.value) return;
+  if (!canWriteProjectData.value) {
+    toast.warning('Permesso PROJECT_WRITE richiesto.');
+    return;
+  }
 
   const title = taskModal.title.trim();
   if (!title) {
@@ -219,6 +236,10 @@ async function saveTask() {
 
 async function deleteTask() {
   if (!selectedTaskDoc.value) return;
+  if (!canWriteProjectData.value) {
+    toast.warning('Permesso PROJECT_WRITE richiesto.');
+    return;
+  }
 
   const confirmed = window.confirm('Eliminare la task?');
   if (!confirmed) return;
@@ -239,6 +260,11 @@ function onTaskDragChangeForColumn(status: unknown, event: any) {
 }
 
 async function handleTaskDragChange(targetStatus: TaskStatusType, event: any) {
+  if (!canWriteProjectData.value) {
+    syncTaskListsFromStore();
+    return;
+  }
+
   const addedTask = event?.added?.element;
   if (addedTask && addedTask.status !== targetStatus) {
     try {
@@ -252,6 +278,68 @@ async function handleTaskDragChange(targetStatus: TaskStatusType, event: any) {
   }
 
   refreshTaskOrderFromLists();
+}
+
+async function createTaskBranch() {
+  if (!projectId.value || !selectedTaskDoc.value) return;
+  if (!canManageProjectGitHub.value) {
+    toast.warning('Permesso GITHUB_MANAGE richiesto.');
+    return;
+  }
+
+  if (!String(project.value?.repoUrl ?? '').trim()) {
+    toast.warning('Repo GitHub non configurata nel progetto.');
+    return;
+  }
+
+  isBranchSyncing.value = true;
+  try {
+    const result = await callCreateProjectTaskBranch({
+      projectId: projectId.value,
+      taskId: selectedTaskDoc.value.id,
+      branchName: branchInput.value.trim() || undefined,
+    });
+
+    branchInput.value = result.branchName;
+    toast.success(result.message);
+  } catch (error) {
+    toast.error(readErrorMessage(error));
+  } finally {
+    isBranchSyncing.value = false;
+  }
+}
+
+async function deleteTaskBranch() {
+  if (!projectId.value || !selectedTaskDoc.value) return;
+  if (!canManageProjectGitHub.value) {
+    toast.warning('Permesso GITHUB_MANAGE richiesto.');
+    return;
+  }
+
+  const currentBranch = String(selectedTaskDoc.value.branchName ?? '').trim();
+  if (!currentBranch) {
+    toast.warning('Nessuna branch associata.');
+    return;
+  }
+
+  const confirmed = window.confirm(`Eliminare la branch "${currentBranch}" su GitHub?`);
+  if (!confirmed) return;
+
+  isBranchSyncing.value = true;
+  try {
+    const result = await callDeleteProjectTaskBranch({
+      projectId: projectId.value,
+      taskId: selectedTaskDoc.value.id,
+      branchName: currentBranch,
+    });
+
+    branchInput.value = '';
+    toast.success(result.message);
+  } catch (error) {
+    toast.error(readErrorMessage(error));
+  } finally {
+    isBranchSyncing.value = false;
+  }
 }
 
 function syncTaskListsFromStore() {
@@ -425,7 +513,14 @@ useHeaderExtra(ProjectBoardHeaderExtra, { onOpenSettings: () => (settingsOpen.va
               <Btn class="column-handle" variant="ghost" icon="drag_indicator" tooltip="Riordina colonna" />
               <strong>{{ getStatusLabel(column.status) }}</strong>
             </div>
-            <Btn variant="ghost" color="primary" icon="add" tooltip="Nuova task" @click="openCreateTask(column.status)" />
+            <Btn
+              variant="ghost"
+              color="primary"
+              icon="add"
+              tooltip="Nuova task"
+              :disabled="!canWriteProjectData"
+              @click="openCreateTask(column.status)"
+            />
           </header>
 
           <draggable
@@ -434,6 +529,7 @@ useHeaderExtra(ProjectBoardHeaderExtra, { onOpenSettings: () => (settingsOpen.va
             class="task-list"
             group="board-tasks"
             :animation="180"
+            :disabled="!canWriteProjectData"
             ghost-class="drag-ghost"
             @change="onTaskDragChangeForColumn(column.status, $event)"
           >
@@ -441,6 +537,10 @@ useHeaderExtra(ProjectBoardHeaderExtra, { onOpenSettings: () => (settingsOpen.va
               <article class="task-tile" @click="openTaskDetail(task.id)">
                 <div class="task-title">{{ task.title }}</div>
                 <div class="task-desc" v-if="task.description">{{ task.description.replace(/<[^>]+>/g, ' ').trim() }}</div>
+                <div v-if="task.branchName" class="task-branch">
+                  <span class="material-symbols-rounded">source_branch</span>
+                  <span class="font-monospace">{{ task.branchName }}</span>
+                </div>
                 <div class="d-flex flex-wrap gap-1 mt-2" v-if="task.tag?.length">
                   <span v-for="tag in task.tag" :key="`${task.id}-${tag.label}`" class="badge" :style="{ backgroundColor: tag.color }">
                     {{ tag.label }}
@@ -496,18 +596,67 @@ useHeaderExtra(ProjectBoardHeaderExtra, { onOpenSettings: () => (settingsOpen.va
       :on-ok="saveTask"
     >
       <Form class="d-flex flex-column gap-3">
+        <div v-if="!canWriteProjectData" class="small text-secondary">
+          Modalita sola lettura: serve `PROJECT_WRITE` per salvare modifiche task.
+        </div>
+
         <div class="row g-2">
           <div class="col-12 col-lg-8">
             <label class="form-label small">Titolo</label>
-            <input v-model="taskModal.title" class="form-control" placeholder="Implement authentication flow" />
+            <input
+              v-model="taskModal.title"
+              class="form-control"
+              placeholder="Implement authentication flow"
+              :readonly="!canWriteProjectData"
+            />
           </div>
           <div class="col-12 col-lg-4">
             <label class="form-label small">Stato</label>
-            <select v-model="taskModal.status" class="form-select">
+            <select v-model="taskModal.status" class="form-select" :disabled="!canWriteProjectData">
               <option v-for="status in TASK_STATUSES" :key="`modal-status-${status}`" :value="status">
                 {{ getStatusLabel(status) }}
               </option>
             </select>
+          </div>
+        </div>
+
+        <div v-if="taskModal.mode === 'edit'" class="border rounded p-3">
+          <label class="form-label small mb-1">Branch GitHub</label>
+          <div class="font-monospace small">
+            {{ selectedTaskDoc?.branchName || 'Nessuna branch collegata' }}
+          </div>
+          <div class="small text-secondary text-truncate" v-if="project?.repoUrl">{{ project.repoUrl }}</div>
+
+          <div v-if="canManageProjectGitHub" class="mt-2">
+            <input
+              v-model="branchInput"
+              class="form-control form-control-sm font-monospace mb-2"
+              placeholder="task/fix-auth-123abc (opzionale)"
+              :disabled="isBranchSyncing"
+            />
+
+            <div class="d-flex flex-wrap gap-2">
+              <Btn
+                variant="outline"
+                color="primary"
+                icon="account_tree"
+                :loading="isBranchSyncing"
+                :disabled="isBranchSyncing"
+                @click.prevent="createTaskBranch"
+              >
+                Crea branch
+              </Btn>
+              <Btn
+                variant="outline"
+                color="danger"
+                icon="delete"
+                :loading="isBranchSyncing"
+                :disabled="isBranchSyncing || !selectedTaskDoc?.branchName"
+                @click.prevent="deleteTaskBranch"
+              >
+                Elimina branch
+              </Btn>
+            </div>
           </div>
         </div>
 
@@ -534,7 +683,7 @@ useHeaderExtra(ProjectBoardHeaderExtra, { onOpenSettings: () => (settingsOpen.va
 
         <div class="d-flex justify-content-between align-items-center">
           <Btn
-            v-if="taskModal.mode === 'edit'"
+            v-if="taskModal.mode === 'edit' && canWriteProjectData"
             variant="outline"
             color="danger"
             icon="delete"
@@ -610,6 +759,19 @@ useHeaderExtra(ProjectBoardHeaderExtra, { onOpenSettings: () => (settingsOpen.va
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.task-branch {
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: #6c757d;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.task-branch .material-symbols-rounded {
+  font-size: 0.9rem;
 }
 
 .drag-ghost {
