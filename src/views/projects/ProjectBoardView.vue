@@ -16,6 +16,7 @@ import { Form } from 'vee-validate';
 import draggable from 'vuedraggable';
 import { useRoute, useRouter } from 'vue-router';
 import { TaskStatus, TASK_STATUSES, type TaskStatusType } from '@shared/enums/TaskStatus';
+import { callCreateProjectTask } from '../../call/callCreateProjectTask';
 import { callCreateProjectTaskBranch, callDeleteProjectTaskBranch } from '../../call/callProjectBranch';
 import { canManageGitHub, canWriteProjects } from '../../permissions';
 import { projectStore } from '../../stores/projectStore';
@@ -216,16 +217,15 @@ async function saveTask() {
       return;
     }
 
-    await projectTaskStore.add({
+    const result = await callCreateProjectTask({
       projectId: projectId.value,
       title,
       description: taskModal.description,
       status: taskModal.status,
       tag: taskModal.tag,
-      updateBy: getUpdater(),
     });
     await tagStore.upsert(taskModal.tag, getUpdater());
-    toast.success('Task creata.');
+    toast.success(`Task creata (${result.taskCode}).`);
     closeTaskModal();
   } catch (error) {
     toast.error(readErrorMessage(error));
@@ -631,7 +631,7 @@ useHeaderExtra(ProjectBoardHeaderExtra, { onOpenSettings: () => (settingsOpen.va
             <input
               v-model="branchInput"
               class="form-control form-control-sm font-monospace mb-2"
-              placeholder="task/fix-auth-123abc (opzionale)"
+              placeholder="T15-fix-login (opzionale)"
               :disabled="isBranchSyncing"
             />
 

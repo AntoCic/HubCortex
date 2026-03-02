@@ -2,6 +2,8 @@
 import { _Auth, toast, useChangeHeader, useStoreWatch } from 'cic-kit';
 import { computed, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { callListGitHubRepositories, type GitHubRepositoryItem } from '../../call/callGitHubRepositories';
+import { hub } from '../../call/hub';
 import AppCard from '../../components/ui/AppCard.vue';
 import {
   PROJECT_API_KEY_LENGTH,
@@ -9,6 +11,7 @@ import {
   normalizeProjectMessageTypes,
   type Project,
 } from '../../models/Project';
+import { canManageGitHub } from '../../permissions';
 import { appConfigStore } from '../../stores/appConfigStore';
 import { projectStore } from '../../stores/projectStore';
 
@@ -39,10 +42,28 @@ const githubRepoOptions = ref<GitHubRepoOption[]>([]);
 const isLoadingRepos = ref(false);
 const repoLoadError = ref('');
 const githubOrg = computed(() => appConfigStore.getConfigData().githubOrg.trim());
+const canManageProjectGitHub = computed(() => canManageGitHub(_Auth?.user?.permissions));
+const isLoggedIn = computed(() => Boolean(_Auth?.isLoggedIn));
 
 const projectDoc = computed<Project | undefined>(() => {
   if (!routeProjectId.value) return undefined;
   return projectStore.items?.[routeProjectId.value];
+});
+const projectApiKey = computed(() => String(projectDoc.value?.apiKey ?? '').trim());
+const repoSelectPlaceholder = computed(() => {
+  if (!canManageProjectGitHub.value) {
+    return 'Permesso GITHUB_MANAGE richiesto'
+  }
+
+  if (isLoadingRepos.value) {
+    return 'Caricamento repository...'
+  }
+
+  if (githubRepoOptions.value.length) {
+    return 'Seleziona repository da GitHub'
+  }
+
+  return 'Nessun repository disponibile da selezione'
 });
 
 watch(
@@ -66,7 +87,7 @@ watch(
 );
 
 watch(
-  githubOrg,
+  [githubOrg, canManageProjectGitHub, isLoggedIn],
   () => {
     void loadGitHubRepos();
   },
@@ -112,37 +133,137 @@ function resetForm() {
   form.typeMessageText = '';
 }
 
+function normalizeGitHubOrg(value: unknown) {
+  const normalized = String(value ?? '').trim().replace(/^@+/, '');
+  if (!normalized || normalized.toLowerCase() === 'your-org') {
+    return '';
+  }
+  return normalized;
+}
+
+function mapGitHubRepoOptions(items: GitHubRepositoryItem[]) {
+  return items
+    .map((item) => {
+      const id = Number(item.id ?? 0);
+      const fullName = String(item.fullName ?? '').trim();
+      const url = String(item.url ?? '').trim();
+      if (!id || !fullName || !url) return undefined;
+      return { id, fullName, url };
+    })
+    .filter((item): item is GitHubRepoOption => Boolean(item))
+    .sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
+
+function notifyHub(type: 'info' | 'warning' | 'error', message: string) {
+  const apiKey = projectApiKey.value;
+  if (!apiKey) return;
+
+  void hub[type]({
+    apiKey,
+    message,
+    sendPush: false,
+  }).catch(() => undefined);
+}
+
+function isTransientCallableError(error: unknown) {
+  const message = readErrorMessage(error).toLowerCase();
+  return message.includes('internal') || message.includes('unavailable') || message.includes('network');
+}
+
+async function delay(ms: number) {
+  await new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function callRepoListWithRetry(input?: { org?: string }) {
+  const maxAttempts = 2;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await callListGitHubRepositories(input ?? {});
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts || !isTransientCallableError(error)) {
+        throw error;
+      }
+      await delay(400 * attempt);
+    }
+  }
+
+  throw lastError ?? new Error('Errore non gestito.');
+}
+
+async function loadReposFromOrg(org: string) {
+  const response = await callRepoListWithRetry({ org });
+  return mapGitHubRepoOptions(response.repositories);
+}
+
+async function loadReposFromUser() {
+  const response = await callRepoListWithRetry();
+  return mapGitHubRepoOptions(response.repositories);
+}
+
 async function loadGitHubRepos() {
   githubRepoOptions.value = [];
   repoLoadError.value = '';
 
-  const org = githubOrg.value;
-  if (!org || org.toLowerCase() === 'your-org') return;
+  if (!canManageProjectGitHub.value) {
+    repoLoadError.value = 'Permesso GITHUB_MANAGE richiesto per caricare repository.';
+    return;
+  }
+
+  if (!isLoggedIn.value) {
+    repoLoadError.value = 'Sessione non pronta. Riprova tra qualche secondo.';
+    return;
+  }
+
+  const org = normalizeGitHubOrg(githubOrg.value);
 
   isLoadingRepos.value = true;
 
   try {
-    const response = await fetch(
-      `https://api.github.com/orgs/${encodeURIComponent(org)}/repos?per_page=100&sort=updated`,
-    );
-
-    if (!response.ok) {
-      throw new Error(`GitHub API error (${response.status})`);
+    if (!org) {
+      githubRepoOptions.value = await loadReposFromUser();
+      return;
     }
 
-    const payload = (await response.json()) as Array<Record<string, unknown>>;
-    githubRepoOptions.value = payload
-      .map((item) => {
-        const id = Number(item.id ?? 0);
-        const fullName = String(item.full_name ?? '').trim();
-        const url = String(item.html_url ?? '').trim();
-        if (!id || !fullName || !url) return undefined;
-        return { id, fullName, url };
-      })
-      .filter((item): item is GitHubRepoOption => Boolean(item))
-      .sort((a, b) => a.fullName.localeCompare(b.fullName));
+    try {
+      githubRepoOptions.value = await loadReposFromOrg(org);
+      if (githubRepoOptions.value.length) {
+        return;
+      }
+    } catch (error) {
+      const orgErrorMessage = readErrorMessage(error);
+      githubRepoOptions.value = await loadReposFromUser();
+      if (githubRepoOptions.value.length) {
+        toast.warning(`Org "${org}" non raggiungibile. Mostro i repository utente.`);
+        notifyHub(
+          'warning',
+          `⚠️ Org GitHub "${org}" non raggiungibile durante il caricamento repository. Fallback su repository utente. Dettaglio: ${orgErrorMessage}`,
+        );
+        return;
+      }
+      throw error;
+    }
+
+    githubRepoOptions.value = await loadReposFromUser();
+    if (githubRepoOptions.value.length) {
+      toast.warning(`Nessun repository trovato per org "${org}". Mostro i repository utente.`);
+      notifyHub(
+        'warning',
+        `⚠️ Nessun repository disponibile per org "${org}". Fallback su repository utente disponibile.`,
+      );
+      return;
+    }
+
+    repoLoadError.value = `Nessun repository disponibile per org "${org}" e utente autenticato.`;
+    notifyHub(
+      'warning',
+      `⚠️ Nessun repository disponibile sia per org "${org}" sia per utente autenticato.`,
+    );
   } catch (error) {
-    repoLoadError.value = readErrorMessage(error);
+    repoLoadError.value = readRepoLoadErrorMessage(error);
+    notifyHub('error', `❌ Caricamento repository GitHub fallito: ${repoLoadError.value}`);
   } finally {
     isLoadingRepos.value = false;
   }
@@ -165,6 +286,17 @@ function readErrorMessage(error: unknown) {
     return String((error as { message?: unknown }).message ?? 'Errore non gestito.');
   }
   return 'Errore non gestito.';
+}
+
+function readRepoLoadErrorMessage(error: unknown) {
+  const raw = readErrorMessage(error);
+  const normalized = raw.toLowerCase();
+
+  if (normalized === 'internal' || normalized.includes('cors')) {
+    return 'Errore temporaneo di connessione alla callable GitHub. Aggiorna la pagina (Ctrl+F5) e riprova.';
+  }
+
+  return raw;
 }
 
 async function saveProject() {
@@ -244,13 +376,13 @@ async function regenerateApiKey() {
             </div>
             <div class="col-12 col-lg-6">
               <label class="form-label small">Repository URL (GitHub)</label>
-              <select v-model="selectedRepoUrl" class="form-select mb-2" :disabled="isLoadingRepos || !githubRepoOptions.length">
+              <select
+                v-model="selectedRepoUrl"
+                class="form-select mb-2"
+                :disabled="isLoadingRepos || !canManageProjectGitHub || !githubRepoOptions.length"
+              >
                 <option value="">
-                  {{ isLoadingRepos
-                    ? 'Caricamento repository...'
-                    : githubRepoOptions.length
-                      ? 'Seleziona repository da GitHub'
-                      : 'Nessun repository disponibile da selezione' }}
+                  {{ repoSelectPlaceholder }}
                 </option>
                 <option v-for="repo in githubRepoOptions" :key="repo.id" :value="repo.url">{{ repo.fullName }}</option>
               </select>
