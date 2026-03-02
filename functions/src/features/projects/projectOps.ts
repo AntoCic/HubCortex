@@ -220,6 +220,7 @@ export const listGitHubRepositories = onCall<ListGitHubRepositoriesRequest>(
   {
     region: REGION,
     secrets: [GITHUB_TOKEN],
+    cors: true,
   },
   async (request): Promise<ListGitHubRepositoriesResponse> => {
     requireAuth(request);

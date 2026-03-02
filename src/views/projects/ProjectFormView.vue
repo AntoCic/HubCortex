@@ -43,6 +43,7 @@ const isLoadingRepos = ref(false);
 const repoLoadError = ref('');
 const githubOrg = computed(() => appConfigStore.getConfigData().githubOrg.trim());
 const canManageProjectGitHub = computed(() => canManageGitHub(_Auth?.user?.permissions));
+const isLoggedIn = computed(() => Boolean(_Auth?.isLoggedIn));
 
 const projectDoc = computed<Project | undefined>(() => {
   if (!routeProjectId.value) return undefined;
@@ -86,7 +87,7 @@ watch(
 );
 
 watch(
-  [githubOrg, canManageProjectGitHub],
+  [githubOrg, canManageProjectGitHub, isLoggedIn],
   () => {
     void loadGitHubRepos();
   },
@@ -164,13 +165,41 @@ function notifyHub(type: 'info' | 'warning' | 'error', message: string) {
   }).catch(() => undefined);
 }
 
+function isTransientCallableError(error: unknown) {
+  const message = readErrorMessage(error).toLowerCase();
+  return message.includes('internal') || message.includes('unavailable') || message.includes('network');
+}
+
+async function delay(ms: number) {
+  await new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function callRepoListWithRetry(input?: { org?: string }) {
+  const maxAttempts = 2;
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await callListGitHubRepositories(input ?? {});
+    } catch (error) {
+      lastError = error;
+      if (attempt >= maxAttempts || !isTransientCallableError(error)) {
+        throw error;
+      }
+      await delay(400 * attempt);
+    }
+  }
+
+  throw lastError ?? new Error('Errore non gestito.');
+}
+
 async function loadReposFromOrg(org: string) {
-  const response = await callListGitHubRepositories({ org });
+  const response = await callRepoListWithRetry({ org });
   return mapGitHubRepoOptions(response.repositories);
 }
 
 async function loadReposFromUser() {
-  const response = await callListGitHubRepositories();
+  const response = await callRepoListWithRetry();
   return mapGitHubRepoOptions(response.repositories);
 }
 
@@ -180,6 +209,11 @@ async function loadGitHubRepos() {
 
   if (!canManageProjectGitHub.value) {
     repoLoadError.value = 'Permesso GITHUB_MANAGE richiesto per caricare repository.';
+    return;
+  }
+
+  if (!isLoggedIn.value) {
+    repoLoadError.value = 'Sessione non pronta. Riprova tra qualche secondo.';
     return;
   }
 
@@ -228,7 +262,7 @@ async function loadGitHubRepos() {
       `⚠️ Nessun repository disponibile sia per org "${org}" sia per utente autenticato.`,
     );
   } catch (error) {
-    repoLoadError.value = readErrorMessage(error);
+    repoLoadError.value = readRepoLoadErrorMessage(error);
     notifyHub('error', `❌ Caricamento repository GitHub fallito: ${repoLoadError.value}`);
   } finally {
     isLoadingRepos.value = false;
@@ -252,6 +286,17 @@ function readErrorMessage(error: unknown) {
     return String((error as { message?: unknown }).message ?? 'Errore non gestito.');
   }
   return 'Errore non gestito.';
+}
+
+function readRepoLoadErrorMessage(error: unknown) {
+  const raw = readErrorMessage(error);
+  const normalized = raw.toLowerCase();
+
+  if (normalized === 'internal' || normalized.includes('cors')) {
+    return 'Errore temporaneo di connessione alla callable GitHub. Aggiorna la pagina (Ctrl+F5) e riprova.';
+  }
+
+  return raw;
 }
 
 async function saveProject() {

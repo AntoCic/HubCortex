@@ -23,7 +23,7 @@ const isPublishing = ref(false);
 const canWriteProjectData = computed(() => canWriteProjects(_Auth?.user?.permissions));
 
 const project = computed(() => (projectId.value ? projectStore.items?.[projectId.value] : undefined));
-const messageTypes = computed(() => normalizeProjectMessageTypes(project.value?.typeMessage));
+const messageTypes = computed(() => orderMessageTypes(normalizeProjectMessageTypes(project.value?.typeMessage)));
 const allProjectMessages = computed(() => (projectId.value ? projectMessageStore.forProject(projectId.value) : []));
 const filteredMessages = computed(() =>
   allProjectMessages.value.filter((item) => item.typeMessage === normalizeMessageType(activeType.value))
@@ -47,6 +47,22 @@ watch(
   },
   { immediate: true }
 );
+
+function orderMessageTypes(value: string[]) {
+  const normalized = value.map((item) => normalizeMessageType(item)).filter(Boolean);
+  const deployIndex = normalized.indexOf('deploy');
+  if (deployIndex <= 0) {
+    return normalized;
+  }
+
+  const deployType = normalized[deployIndex];
+  if (!deployType) {
+    return normalized;
+  }
+
+  const others = normalized.filter((_, index) => index !== deployIndex);
+  return [deployType, ...others];
+}
 
 watch(
   projectId,
