@@ -13,6 +13,16 @@ const PROJECT_MESSAGES_COLLECTION = 'projectMessages';
 const PROJECT_NOTIFICATION_PREFERENCES_COLLECTION = 'projectNotificationPreferences';
 const USERS_COLLECTION = 'users';
 const DEFAULT_MESSAGE_TYPES = ['error', 'warning', 'info', 'deploy'] as const;
+const TASK_STATUSES = ['todo', 'doing', 'blocked', 'bug', 'done'] as const;
+const DEFAULT_TASK_STATUS = TASK_STATUSES[0];
+const MAX_TASK_COUNTER = 999999;
+
+type TaskStatus = (typeof TASK_STATUSES)[number];
+
+type TaskTag = {
+  label: string;
+  color: string;
+};
 
 type BranchRequest = {
   projectId: string;
@@ -21,10 +31,48 @@ type BranchRequest = {
   sourceBranch?: string;
 };
 
+type CreateProjectTaskRequest = {
+  projectId: string;
+  title: string;
+  description?: string;
+  status?: string;
+  tag?: TaskTag[];
+};
+
+type CreateProjectTaskResponse = {
+  id: string;
+  taskNumber: number;
+  taskCode: string;
+  branchName: string;
+  status: TaskStatus;
+};
+
 type BranchResponse = {
   branchName: string;
   created: boolean;
   message: string;
+};
+
+type ListGitHubRepositoriesRequest = {
+  org?: string;
+};
+
+type GitHubRepositoryItem = {
+  id: number;
+  fullName: string;
+  url: string;
+  owner: string;
+  name: string;
+  isPrivate: boolean;
+  isArchived: boolean;
+  defaultBranch?: string;
+  updatedAt?: string;
+};
+
+type ListGitHubRepositoriesResponse = {
+  source: 'org' | 'user';
+  org?: string;
+  repositories: GitHubRepositoryItem[];
 };
 
 type PublishProjectMessageRequest = {
@@ -82,7 +130,10 @@ export const createProjectTaskBranch = onCall<BranchRequest>(
       throw new HttpsError('failed-precondition', 'Repo URL GitHub non valida.');
     }
 
-    const generatedBranchName = buildBranchNameFromTask(String(taskData.title ?? 'task'), taskId);
+    const taskCode = readTaskCode(taskData);
+    const generatedBranchName = taskCode
+      ? buildBranchNameFromTask(String(taskData.title ?? 'task'), taskCode)
+      : buildLegacyBranchNameFromTask(String(taskData.title ?? 'task'), taskId);
     const branchName = normalizeBranchName(inputBranchName ?? generatedBranchName);
     if (!branchName) {
       throw new HttpsError('invalid-argument', 'Nome branch non valido.');
@@ -161,6 +212,113 @@ export const deleteProjectTaskBranch = onCall<BranchRequest>(
       branchName,
       created: false,
       message: deleted ? 'Branch eliminata.' : 'Branch non trovata su GitHub.',
+    };
+  },
+);
+
+export const listGitHubRepositories = onCall<ListGitHubRepositoriesRequest>(
+  {
+    region: REGION,
+    secrets: [GITHUB_TOKEN],
+  },
+  async (request): Promise<ListGitHubRepositoriesResponse> => {
+    requireAuth(request);
+    await requireGitHubManagePermission(request);
+
+    const data = request.data ? asObject(request.data) : {};
+    const org = readOptionalString(data, 'org', { maxLength: 120 });
+    const normalizedOrg = normalizeGitHubOrg(org);
+
+    const source: 'org' | 'user' = normalizedOrg ? 'org' : 'user';
+    const path = normalizedOrg
+      ? `/orgs/${encodeURIComponent(normalizedOrg)}/repos?per_page=100&sort=updated&type=all`
+      : '/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member';
+
+    const response = await githubRequest(path, getGitHubToken(), undefined, [200]);
+    return {
+      source,
+      org: normalizedOrg || undefined,
+      repositories: normalizeGitHubRepositoryList(response.data),
+    };
+  },
+);
+
+export const createProjectTask = onCall<CreateProjectTaskRequest>(
+  {
+    region: REGION,
+  },
+  async (request): Promise<CreateProjectTaskResponse> => {
+    const uid = requireAuth(request);
+    await requireProjectWritePermission(request);
+
+    const data = asObject(request.data);
+    const projectId = readRequiredString(data, 'projectId', { maxLength: 120 });
+    const title = readRequiredString(data, 'title', { maxLength: 200 });
+    const description = readOptionalString(data, 'description', { maxLength: 50000 });
+    const status = normalizeTaskStatus(readOptionalString(data, 'status', { maxLength: 32 }) || DEFAULT_TASK_STATUS);
+    const tag = readOptionalTaskTags(data.tag);
+
+    const projectRef = db.collection(PROJECTS_COLLECTION).doc(projectId);
+    const taskRef = db.collection(TASKS_COLLECTION).doc();
+
+    const created = await db.runTransaction(async (tx) => {
+      const projectSnap = await tx.get(projectRef);
+      if (!projectSnap.exists) {
+        throw new HttpsError('not-found', 'Progetto non trovato.');
+      }
+
+      const projectData = asObject(projectSnap.data());
+      const nextTaskNumber = normalizeTaskCounter(projectData.taskCounter) + 1;
+      if (nextTaskNumber > MAX_TASK_COUNTER) {
+        throw new HttpsError('failed-precondition', 'Limite task raggiunto per il progetto.');
+      }
+
+      const taskCode = buildTaskCode(nextTaskNumber);
+      const taskData: Record<string, unknown> = {
+        id: taskRef.id,
+        projectId,
+        taskNumber: nextTaskNumber,
+        taskCode,
+        title,
+        status,
+        updateBy: uid,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        deleteAt: null,
+      };
+
+      if (description) {
+        taskData.description = description;
+      }
+
+      if (tag?.length) {
+        taskData.tag = tag;
+      }
+
+      tx.set(taskRef, taskData);
+      tx.set(
+        projectRef,
+        {
+          taskCounter: nextTaskNumber,
+          updateBy: uid,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true },
+      );
+
+      return {
+        taskNumber: nextTaskNumber,
+        taskCode,
+        branchName: buildBranchNameFromTask(title, taskCode),
+      };
+    });
+
+    return {
+      id: taskRef.id,
+      taskNumber: created.taskNumber,
+      taskCode: created.taskCode,
+      branchName: created.branchName,
+      status,
     };
   },
 );
@@ -459,6 +617,50 @@ async function dispatchProjectPush(input: {
   };
 }
 
+function normalizeGitHubOrg(value: unknown) {
+  const normalized = String(value ?? '').trim().replace(/^@+/, '');
+  if (!normalized || normalized.toLowerCase() === 'your-org') {
+    return '';
+  }
+  return normalized.slice(0, 120);
+}
+
+function normalizeGitHubRepositoryList(value: unknown): GitHubRepositoryItem[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const repositories: GitHubRepositoryItem[] = [];
+
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    const id = Number(record.id ?? 0);
+    const fullName = String(record.full_name ?? '').trim();
+    const url = String(record.html_url ?? '').trim();
+    if (!id || !fullName || !url) continue;
+
+    const ownerData =
+      record.owner && typeof record.owner === 'object' && !Array.isArray(record.owner)
+        ? (record.owner as Record<string, unknown>)
+        : {};
+
+    repositories.push({
+      id,
+      fullName,
+      url,
+      owner: String(ownerData.login ?? '').trim(),
+      name: String(record.name ?? '').trim(),
+      isPrivate: Boolean(record.private),
+      isArchived: Boolean(record.archived),
+      defaultBranch: String(record.default_branch ?? '').trim() || undefined,
+      updatedAt: String(record.updated_at ?? '').trim() || undefined,
+    });
+  }
+
+  return repositories.sort((a, b) => a.fullName.localeCompare(b.fullName));
+}
+
 async function createGitHubBranch(repo: ParsedGitHubRepo, branchName: string, sourceBranch?: string) {
   const token = getGitHubToken();
   const baseBranch = sourceBranch ? normalizeBranchName(sourceBranch) : await getDefaultGitHubBranch(repo, token);
@@ -609,7 +811,18 @@ function parseGitHubRepo(value: string): ParsedGitHubRepo | null {
   return null;
 }
 
-function buildBranchNameFromTask(title: string, taskId: string) {
+function buildBranchNameFromTask(title: string, taskCode: string) {
+  const code = normalizeTaskCode(taskCode) || 'T0';
+  const slug = String(title ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80);
+
+  return normalizeBranchName(`${code}-${slug || 'task'}`);
+}
+
+function buildLegacyBranchNameFromTask(title: string, taskId: string) {
   const slug = String(title ?? '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
@@ -622,12 +835,68 @@ function buildBranchNameFromTask(title: string, taskId: string) {
 function normalizeBranchName(value: string) {
   return String(value ?? '')
     .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9/_-]+/g, '-')
+    .replace(/[^A-Za-z0-9/_-]+/g, '-')
     .replace(/\/{2,}/g, '/')
     .replace(/^-+|-+$/g, '')
     .replace(/^\/+|\/+$/g, '')
     .slice(0, 120);
+}
+
+function normalizeTaskCounter(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) return 0;
+  return parsed;
+}
+
+function buildTaskCode(taskNumber: number) {
+  return `T${taskNumber}`;
+}
+
+function normalizeTaskCode(value: unknown) {
+  const raw = String(value ?? '').trim();
+  const match = raw.match(/^t?(\d{1,6})$/i);
+  if (!match?.[1]) return '';
+  return buildTaskCode(Number(match[1]));
+}
+
+function readTaskCode(taskData: Record<string, unknown>) {
+  const explicit = normalizeTaskCode(taskData.taskCode);
+  if (explicit) return explicit;
+
+  const taskNumber = normalizeTaskCounter(taskData.taskNumber);
+  if (taskNumber > 0) {
+    return buildTaskCode(taskNumber);
+  }
+
+  return '';
+}
+
+function normalizeTaskStatus(value: unknown): TaskStatus {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (TASK_STATUSES.includes(normalized as TaskStatus)) {
+    return normalized as TaskStatus;
+  }
+  return DEFAULT_TASK_STATUS;
+}
+
+function readOptionalTaskTags(value: unknown): TaskTag[] | undefined {
+  if (value == null) return undefined;
+  if (!Array.isArray(value)) {
+    throw new HttpsError('invalid-argument', 'Campo "tag" deve essere un array.');
+  }
+
+  const output: TaskTag[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    const label = String(record.label ?? '').trim().slice(0, 40);
+    const color = String(record.color ?? '').trim().slice(0, 24);
+    if (!label || !color) continue;
+    output.push({ label, color });
+  }
+
+  if (!output.length) return undefined;
+  return output.slice(0, 30);
 }
 
 function normalizeProjectMessageTypes(value: unknown) {

@@ -2,7 +2,7 @@
 import { _Auth, Btn, ContainerSideTabs, toast, useChangeHeader, useStoreWatch, type SideTabs } from 'cic-kit';
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { callPublishProjectMessage } from '../../call/callPublishProjectMessage';
+import { callPublishProjectMessage } from '../../call/callProjectMessageRelay';
 import { normalizeMessageType, normalizeProjectMessageTypes } from '../../models/Project';
 import { canWriteProjects } from '../../permissions';
 import { projectMessageStore } from '../../stores/projectMessageStore';

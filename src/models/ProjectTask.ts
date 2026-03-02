@@ -10,6 +10,8 @@ function normalizeTags(value: unknown) {
 export interface ProjectTaskData extends Partial<Timestampble> {
   id: string;
   projectId: string;
+  taskNumber?: number;
+  taskCode?: string;
   title: string;
   description?: string;
   tag?: ColorTag[];
@@ -22,6 +24,8 @@ export class ProjectTask extends FirestoreModel<ProjectTaskData> {
   static collectionName = 'projectTasks';
 
   projectId: string;
+  taskNumber?: number;
+  taskCode?: string;
   title: string;
   description?: string;
   tag?: ColorTag[];
@@ -32,6 +36,8 @@ export class ProjectTask extends FirestoreModel<ProjectTaskData> {
   constructor(data: ProjectTaskData) {
     super(data);
     this.projectId = data.projectId;
+    this.taskNumber = Number.isInteger(data.taskNumber) && Number(data.taskNumber) > 0 ? Number(data.taskNumber) : undefined;
+    this.taskCode = String(data.taskCode ?? '').trim() || undefined;
     this.title = data.title;
     this.description = data.description;
     this.tag = normalizeTags(data.tag);
@@ -44,6 +50,8 @@ export class ProjectTask extends FirestoreModel<ProjectTaskData> {
     return {
       id: this.id,
       projectId: this.projectId,
+      taskNumber: this.taskNumber,
+      taskCode: this.taskCode,
       title: this.title,
       description: this.description,
       tag: normalizeTags(this.tag),

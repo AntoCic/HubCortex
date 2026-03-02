@@ -3,9 +3,11 @@ import { genericChatAgent } from './agents/genericChatAgent.js';
 import { imageChatAgent } from './agents/imageChatAgent.js';
 import { REGION } from './config/runtime.js';
 import {
+  createProjectTask,
   createProjectTaskBranch,
   deleteProjectTaskBranch,
   ingestProjectMessage,
+  listGitHubRepositories,
   publishProjectMessage,
 } from './features/projects/projectOps.js';
 
@@ -19,8 +21,10 @@ export {
   syncPublicUser,
   genericChatAgent,
   imageChatAgent,
+  createProjectTask,
   createProjectTaskBranch,
   deleteProjectTaskBranch,
+  listGitHubRepositories,
   publishProjectMessage,
   ingestProjectMessage,
 };
